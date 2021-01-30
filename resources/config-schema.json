@@ -1,0 +1,108 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "http://pizug.com/tool/cpi-sync",
+  "type": "object",
+  "title": "cpisync config schema",
+
+  "definitions": {
+    "credential_s_user": {
+      "type": "object",
+      "required": ["username"],
+      "properties": {
+        "username": {
+          "type": "string"
+        },
+        "password_environment_variable": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "credential_oauth_client_credentials": {
+      "type": "object",
+      "required": ["client_id", "token_endpoint_url"],
+      "properties": {
+        "client_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "client_secret_environment_variable": {
+          "type": "string",
+          "minLength": 1
+        },
+        "token_endpoint_url": {
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "additionalProperties": false
+    },
+    "credential": {
+      "type": "object",
+      "title": "The credential schema",
+
+      "properties": {
+        "s_user": { "$ref": "#/definitions/credential_s_user" },
+        "oauth_client_credentials": {
+          "$ref": "#/definitions/credential_oauth_client_credentials"
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["s_user"]
+        },
+
+        {
+          "required": ["oauth_client_credentials"]
+        }
+      ],
+      "additionalProperties": false
+    },
+
+    "package": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "local": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+
+  "required": ["cpisync", "tenant", "packages"],
+  "properties": {
+    "cpisync": {
+      "type": "string",
+      "title": "The CPISync schema version",
+      "const": "0.1.0"
+    },
+    "tenant": {
+      "type": "object",
+      "title": "The tenant schema",
+
+      "required": ["host", "credential"],
+      "properties": {
+        "host": {
+          "type": "string",
+          "format": "hostname"
+        },
+        "credential": { "$ref": "#/definitions/credential" }
+      },
+      "additionalProperties": false
+    },
+    "packages": {
+      "type": "array",
+      "additionalItems": false,
+      "items": { "$ref": "#/definitions/package" }
+    }
+  },
+  "additionalProperties": false
+}
