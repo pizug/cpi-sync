@@ -1,10 +1,11 @@
-use std::{error::Error, fs::File, io::Read};
+use std::{env, error::Error, fs::File, io::Read};
 
 use clap::Clap;
 use jsonschema::{self, Draft, JSONSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
 
+use std::collections::HashMap;
 #[derive(Serialize, Deserialize, Debug)]
 struct Package {
     id: String,
@@ -53,7 +54,8 @@ struct Opts {
     config: String,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
 
     let schema_str = include_str!("../resources/config-schema.json");
@@ -79,8 +81,59 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let config: Config = serde_json::from_str(&config_str)?;
 
-    println!("config: {:?}", config);
+    // println!("config: {:?}", config);
     //println!("Using input file: {:?}", opts);
+
+    &config.tenant.host;
+
+    // let passvalue2: String = env::var(key)?;
+
+    let str2 = format!("https://{host}/api/v1/", host = &config.tenant.host);
+
+    println!("Value: {:?}", str2);
+    let client = reqwest::Client::new();
+
+    let mut authorization: Option<String> = None;
+
+    match config.tenant.credential {
+        CredentialInside::SUser(c) => {
+            match &c.password_environment_variable {
+                Some(varkey) => {
+                    match env::var(varkey) {
+                        Ok(val) => {
+                            let encoded = base64::encode(format!(
+                                "{username}:{pass}",
+                                username = &c.username,
+                                pass = &val
+                            ));
+                            authorization = Some(format!("Basic {encoded}", encoded = encoded));
+                        }
+                        Err(e) => {
+                            println!("Can not find environment variable: {}: {}", &varkey, e);
+                            return Err(e.into());
+                        }
+                    };
+                }
+                None => (),
+            };
+        }
+        CredentialInside::OauthClientCredentials(c) => {}
+    }
+    match &authorization {
+        Some(auth) => {
+            let resp = client
+                .get(&str2)
+                .header("Authorization", auth)
+                .send()
+                .await?;
+
+            let resp2 = resp.status().is_success();
+            println!("{:#?}", resp2);
+        }
+        None => {
+            println!("Could not retrieve password/secret.")
+        }
+    }
 
     Ok(())
 }
