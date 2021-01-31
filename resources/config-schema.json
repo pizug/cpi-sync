@@ -68,7 +68,7 @@
           "type": "string",
           "minLength": 1
         },
-        "local": {
+        "local_dir": {
           "type": "string",
           "minLength": 1
         }
@@ -88,9 +88,9 @@
       "type": "object",
       "title": "The tenant schema",
 
-      "required": ["host", "credential"],
+      "required": ["management_host", "credential"],
       "properties": {
-        "host": {
+        "management_host": {
           "type": "string",
           "format": "hostname"
         },

@@ -1,19 +1,17 @@
+use bytes::Buf;
 use clap::Clap;
 use crossterm::event::{read, Event};
 use jsonschema::{self, Draft, JSONSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
-use std::collections::HashMap;
-use std::{
-    env,
-    error::Error,
-    fs::File,
-    io::{stdin, stdout, Read, Write},
-};
+use std::{collections::HashMap, fs, io::Cursor, ops::Deref};
+use std::{env, fs::File, io::Read};
+
+//config types
 #[derive(Serialize, Deserialize, Debug)]
 struct Package {
     id: String,
-    local: Option<String>,
+    local_dir: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -39,7 +37,7 @@ enum CredentialInside {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Tenant {
-    host: String,
+    management_host: String,
     credential: CredentialInside,
     // credential: CredentialInside,
 }
@@ -51,13 +49,30 @@ struct Config {
     packages: Vec<Package>,
 }
 
+//cli type
 #[derive(Clap, Debug)]
 #[clap(version = "0.1.0", author = "Fatih Pense @ pizug.com")]
 struct Opts {
-    #[clap(short, long, default_value = "cpi-sync.json")]
+    #[clap(short, long, default_value = "./cpi-sync.json")]
     config: String,
     #[clap(long)]
     no_input: bool,
+}
+
+// response types
+#[derive(Serialize, Deserialize, Debug)]
+struct APIResponseResult {
+    #[serde(rename = "Id")]
+    id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct APIResponseD {
+    results: Vec<APIResponseResult>,
+}
+#[derive(Serialize, Deserialize, Debug)]
+struct APIResponseRoot {
+    d: APIResponseD,
 }
 
 fn pause() {
@@ -78,7 +93,7 @@ fn pause() {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
 
-    println!("Running cpisync...");
+    println!("Start CPI Sync?");
     if !opts.no_input {
         pause();
     }
@@ -113,7 +128,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // let mut authorization: Option<String> = None;
 
-    let mut username: Option<String> = None;
     let mut password: Option<String> = None;
 
     //get secret from environment variable
@@ -157,10 +171,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    let username: String = match &config.tenant.credential {
+        CredentialInside::OauthClientCredentials(c) => c.client_id.to_string(),
+        CredentialInside::SUser(c) => c.username.to_string(),
+    };
     //try to get password from command line
     if !opts.no_input {
         match &password {
             None => {
+                let message = format!(
+                    "Would you like to enter a password for user: {user} to connect host: {host}?",
+                    user = username,
+                    host = config.tenant.management_host
+                );
+
+                println!("{}", message);
+
                 let pass = rpassword::prompt_password_stdout("Password: ")?;
                 password = Some(pass);
                 //println!("Your password is {}", pass);
@@ -169,7 +195,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut password: String = match password {
+    let password: String = match password {
         Some(p) => p,
         None => {
             return Err(std::io::Error::new(
@@ -180,7 +206,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let check_api_url = format!("https://{host}/api/v1/", host = &config.tenant.host);
+    let check_api_url = format!(
+        "https://{host}/api/v1/",
+        host = &config.tenant.management_host
+    );
 
     //for oauth we need to get the token
     let authorization = match &config.tenant.credential {
@@ -199,32 +228,85 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .json::<HashMap<String, String>>()
                 .await?;
 
-            println!("{:#?}", resp);
-
-            String::new()
+            format!("Bearer {token}", token = resp.get("access_token").unwrap())
         }
         CredentialInside::SUser(c) => basic_auth(&c.username, &password),
     };
 
     let resp = client
         .get(&check_api_url)
-        .header("Authorization", authorization)
+        .header("Authorization", &authorization)
         .send()
         .await?;
 
     let resp_success = &resp.status().is_success();
     let resp_code = resp.status();
 
-    println!("{:#?}, {:#?}", resp_success, resp_code);
+    if !resp_success {
+        println!("API Check Failed!");
+        println!("API Response Code: {:#?}", resp_code);
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, "API Check Failed!").into());
+    }
 
-    println!("API Check Failed!");
+    let mut data_dir = std::path::PathBuf::from(&opts.config);
+    data_dir = data_dir.parent().unwrap().to_path_buf();
 
-    return Err(std::io::Error::new(std::io::ErrorKind::Other, "API Check Failed!").into());
+    //fetch package artifacts
+    for package in config.packages.iter() {
+        let package_path = match &package.local_dir {
+            Some(str) => &str,
+            None => &package.id,
+        };
+
+        println!("Processing Package: {:?}", package);
+        let api_package_artifact_list_url= format!("https://{host}/api/v1/IntegrationPackages('{package_id}')/IntegrationDesigntimeArtifacts",
+        host=config.tenant.management_host,package_id= package.id);
+        let resp = client
+            .get(&api_package_artifact_list_url)
+            .header("Authorization", &authorization)
+            .header("Accept", "application/json")
+            .send()
+            .await?
+            .json::<APIResponseRoot>()
+            .await?;
+
+        for artifact in resp.d.results {
+            println!("- Artifact: {:#?}", artifact.id);
+
+            let api_artifact_payload_url = format!("https://{host}/api/v1/IntegrationDesigntimeArtifacts(Id='{artifact_id}',Version='Active')/$value",
+            host=config.tenant.management_host,artifact_id= artifact.id);
+            let resp = client
+                .get(&api_artifact_payload_url)
+                .header("Authorization", &authorization)
+                .send()
+                .await?;
+
+            let respbytes = resp.bytes().await?;
+            let respbytes_cursor = Cursor::new(respbytes.deref());
+
+            let mut archive = zip::ZipArchive::new(respbytes_cursor).unwrap();
+
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i).unwrap();
+
+                let outpath = file.enclosed_name().unwrap().to_owned();
+
+                let write_dir = data_dir
+                    .join(&package_path)
+                    .join(&artifact.id)
+                    .join(outpath);
+
+                fs::create_dir_all(&write_dir.parent().unwrap()).unwrap();
+
+                let mut write_dir = fs::File::create(&write_dir).unwrap();
+                std::io::copy(&mut file, &mut write_dir).unwrap();
+            }
+        }
+    }
 
     if !opts.no_input {
         pause();
     }
-
     Ok(())
 }
 
@@ -232,4 +314,15 @@ fn basic_auth(user: &str, pass: &str) -> String {
     let encoded = base64::encode(format!("{username}:{pass}", username = &user, pass = &pass));
     let authorization = format!("Basic {encoded}", encoded = encoded);
     return authorization;
+}
+
+async fn process_package(client: &reqwest::Client, api_url: &str, auth: &str) {
+    let resp = client
+        .get(api_url)
+        .header("Authorization", auth)
+        .send()
+        .await;
+
+    // .json::<HashMap<String, String>>()
+    // .await?;
 }
