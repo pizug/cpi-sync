@@ -1,11 +1,15 @@
-use std::{env, error::Error, fs::File, io::Read};
-
 use clap::Clap;
+use crossterm::event::{read, Event};
 use jsonschema::{self, Draft, JSONSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
-
 use std::collections::HashMap;
+use std::{
+    env,
+    error::Error,
+    fs::File,
+    io::{stdin, stdout, Read, Write},
+};
 #[derive(Serialize, Deserialize, Debug)]
 struct Package {
     id: String,
@@ -52,11 +56,32 @@ struct Config {
 struct Opts {
     #[clap(short, long, default_value = "cpi-sync.json")]
     config: String,
+    #[clap(long)]
+    no_input: bool,
+}
+
+fn pause() {
+    println!("Press any key to continue...");
+    loop {
+        // `read()` blocks until an `Event` is available
+        match read().unwrap() {
+            Event::Key(_) => {
+                // println!("{:?}", event);
+                break;
+            }
+            _ => {}
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
+
+    println!("Running cpisync...");
+    if !opts.no_input {
+        pause();
+    }
 
     let schema_str = include_str!("../resources/config-schema.json");
     let json_schema: Value = serde_json::from_str(schema_str).unwrap();
@@ -84,56 +109,127 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // println!("config: {:?}", config);
     //println!("Using input file: {:?}", opts);
 
-    &config.tenant.host;
-
-    // let passvalue2: String = env::var(key)?;
-
-    let str2 = format!("https://{host}/api/v1/", host = &config.tenant.host);
-
-    println!("Value: {:?}", str2);
     let client = reqwest::Client::new();
 
-    let mut authorization: Option<String> = None;
+    // let mut authorization: Option<String> = None;
 
-    match config.tenant.credential {
+    let mut username: Option<String> = None;
+    let mut password: Option<String> = None;
+
+    //get secret from environment variable
+    match &config.tenant.credential {
         CredentialInside::SUser(c) => {
             match &c.password_environment_variable {
                 Some(varkey) => {
                     match env::var(varkey) {
                         Ok(val) => {
-                            let encoded = base64::encode(format!(
-                                "{username}:{pass}",
-                                username = &c.username,
-                                pass = &val
-                            ));
-                            authorization = Some(format!("Basic {encoded}", encoded = encoded));
+                            password = Some(val);
                         }
                         Err(e) => {
-                            println!("Can not find environment variable: {}: {}", &varkey, e);
-                            return Err(e.into());
+                            println!(
+                                "Can not find S-user Pass in environment variable: {}: {}",
+                                &varkey, e
+                            );
+                            // return Err(e.into());
                         }
                     };
                 }
                 None => (),
             };
         }
-        CredentialInside::OauthClientCredentials(c) => {}
+        CredentialInside::OauthClientCredentials(c) => {
+            match &c.client_secret_environment_variable {
+                Some(varkey) => {
+                    match env::var(varkey) {
+                        Ok(val) => {
+                            password = Some(val);
+                        }
+                        Err(e) => {
+                            println!(
+                                "Can not find Client Secret environment variable: {}: {}",
+                                &varkey, e
+                            );
+                        }
+                    };
+                }
+                None => (),
+            };
+        }
     }
-    match &authorization {
-        Some(auth) => {
+
+    //try to get password from command line
+    if !opts.no_input {
+        match &password {
+            None => {
+                let pass = rpassword::prompt_password_stdout("Password: ")?;
+                password = Some(pass);
+                //println!("Your password is {}", pass);
+            }
+            _ => {}
+        }
+    }
+
+    let mut password: String = match password {
+        Some(p) => p,
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Could not use any password/secret",
+            )
+            .into())
+        }
+    };
+
+    let check_api_url = format!("https://{host}/api/v1/", host = &config.tenant.host);
+
+    //for oauth we need to get the token
+    let authorization = match &config.tenant.credential {
+        CredentialInside::OauthClientCredentials(c) => {
+            let api_token_url = format!(
+                "{url}?grant_type=client_credentials",
+                url = c.token_endpoint_url
+            );
+            let auth = basic_auth(&c.client_id, &password);
+
             let resp = client
-                .get(&str2)
+                .get(&api_token_url)
                 .header("Authorization", auth)
                 .send()
+                .await?
+                .json::<HashMap<String, String>>()
                 .await?;
 
-            let resp2 = resp.status().is_success();
-            println!("{:#?}", resp2);
+            println!("{:#?}", resp);
+
+            String::new()
         }
-        None => {
-            println!("Could not retrieve password/secret.")
-        }
+        CredentialInside::SUser(c) => basic_auth(&c.username, &password),
+    };
+
+    let resp = client
+        .get(&check_api_url)
+        .header("Authorization", authorization)
+        .send()
+        .await?;
+
+    let resp_success = &resp.status().is_success();
+    let resp_code = resp.status();
+
+    println!("{:#?}, {:#?}", resp_success, resp_code);
+
+    println!("API Check Failed!");
+
+    return Err(std::io::Error::new(std::io::ErrorKind::Other, "API Check Failed!").into());
+
+    if !opts.no_input {
+        pause();
     }
 
     Ok(())
+}
+
+fn basic_auth(user: &str, pass: &str) -> String {
+    let encoded = base64::encode(format!("{username}:{pass}", username = &user, pass = &pass));
+    let authorization = format!("Basic {encoded}", encoded = encoded);
+    return authorization;
 }
