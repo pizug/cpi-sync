@@ -1,11 +1,10 @@
-use bytes::Buf;
 use clap::Clap;
 use crossterm::event::{read, Event};
 use jsonschema::{self, Draft, JSONSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
-use std::{collections::HashMap, fs, io::Cursor, ops::Deref};
 use std::{env, fs::File, io::Read};
+use std::{fs, io::Cursor, ops::Deref};
 
 //config types
 #[derive(Serialize, Deserialize, Debug)]
@@ -75,6 +74,13 @@ struct APIResponseRoot {
     d: APIResponseD,
 }
 
+// response types: token api
+
+#[derive(Serialize, Deserialize, Debug)]
+struct TokenAPIResponseRoot {
+    access_token: String,
+}
+
 fn pause() {
     println!("Press any key to continue...");
     loop {
@@ -89,16 +95,13 @@ fn pause() {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let opts: Opts = Opts::parse();
-
+async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
     println!("Start CPI Sync?");
     if !opts.no_input {
         pause();
     }
 
-    let schema_str = include_str!("../resources/config-schema.json");
+    let schema_str = include_str!("../resources/config.schema.json");
     let json_schema: Value = serde_json::from_str(schema_str).unwrap();
 
     let compiled_schema = JSONSchema::options()
@@ -221,14 +224,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let auth = basic_auth(&c.client_id, &password);
 
             let resp = client
-                .get(&api_token_url)
+                .post(&api_token_url)
                 .header("Authorization", auth)
                 .send()
-                .await?
-                .json::<HashMap<String, String>>()
                 .await?;
+            println!("Token API status: {:?}", resp.status());
+            let respbody = resp.json::<TokenAPIResponseRoot>().await?;
 
-            format!("Bearer {token}", token = resp.get("access_token").unwrap())
+            format!("Bearer {token}", token = respbody.access_token)
         }
         CredentialInside::SUser(c) => basic_auth(&c.username, &password),
     };
@@ -304,25 +307,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if !opts.no_input {
-        pause();
-    }
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let opts: Opts = Opts::parse();
+    let result = run(&opts).await;
+
+    match result {
+        Ok(()) => {
+            println!("Completed successfully.");
+            if !opts.no_input {
+                pause();
+            }
+            return Ok(());
+        }
+        Err(err) => {
+            println!("{:?}", err);
+            if !opts.no_input {
+                pause();
+            }
+            return Err(err.into());
+        }
+    };
 }
 
 fn basic_auth(user: &str, pass: &str) -> String {
     let encoded = base64::encode(format!("{username}:{pass}", username = &user, pass = &pass));
     let authorization = format!("Basic {encoded}", encoded = encoded);
     return authorization;
-}
-
-async fn process_package(client: &reqwest::Client, api_url: &str, auth: &str) {
-    let resp = client
-        .get(api_url)
-        .header("Authorization", auth)
-        .send()
-        .await;
-
-    // .json::<HashMap<String, String>>()
-    // .await?;
 }
