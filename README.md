@@ -99,3 +99,5 @@ OPTIONS:
 ### JSON Config File Reference
 
 You can inspect `config.schema.json` under `resources`. You can use a tool like ["JSON Schema Faker"](https://json-schema-faker.js.org/) to get more ideas about your options. Just paste the schema and click generate a few times!
+
+You can also use ["JSON Schema Validator"](https://www.jsonschemavalidator.net/) if you get too many errors on your config file.
