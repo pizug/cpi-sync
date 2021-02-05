@@ -3,7 +3,6 @@
   "$id": "http://pizug.com/tool/cpi-sync",
   "type": "object",
   "title": "cpisync config schema",
-
   "definitions": {
     "credential_s_user": {
       "type": "object",
@@ -18,7 +17,6 @@
       },
       "additionalProperties": false
     },
-
     "credential_oauth_client_credentials": {
       "type": "object",
       "required": ["client_id", "token_endpoint_url"],
@@ -42,9 +40,10 @@
     "credential": {
       "type": "object",
       "title": "The credential schema",
-
       "properties": {
-        "s_user": { "$ref": "#/definitions/credential_s_user" },
+        "s_user": {
+          "$ref": "#/definitions/credential_s_user"
+        },
         "oauth_client_credentials": {
           "$ref": "#/definitions/credential_oauth_client_credentials"
         }
@@ -53,32 +52,54 @@
         {
           "required": ["s_user"]
         },
-
         {
           "required": ["oauth_client_credentials"]
         }
       ],
       "additionalProperties": false
     },
-
-    "package": {
+    "package_single": {
       "type": "object",
-      "required": ["id"],
+      "required": ["id", "type"],
       "properties": {
+        "type": {
+          "type": "string",
+          "const": "single"
+        },
         "id": {
           "type": "string",
           "minLength": 1
         },
-        "local_dir": {
+        "operation": {
           "type": "string",
-          "minLength": 1
+          "enum": ["include", "exclude"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "package_regex": {
+      "type": "object",
+      "required": ["pattern", "type"],
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": ["include", "exclude"]
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "const": "regex"
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "format": "regex"
         }
       },
       "additionalProperties": false
     }
   },
-
-  "required": ["cpisync", "tenant", "packages"],
+  "required": ["cpisync", "tenant", "package_rules"],
   "properties": {
     "cpisync": {
       "type": "string",
@@ -88,21 +109,31 @@
     "tenant": {
       "type": "object",
       "title": "The tenant schema",
-
       "required": ["management_host", "credential"],
       "properties": {
         "management_host": {
           "type": "string",
           "format": "hostname"
         },
-        "credential": { "$ref": "#/definitions/credential" }
+        "credential": {
+          "$ref": "#/definitions/credential"
+        }
       },
       "additionalProperties": false
     },
-    "packages": {
+    "package_rules": {
       "type": "array",
       "additionalItems": false,
-      "items": { "$ref": "#/definitions/package" }
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/definitions/package_single"
+          },
+          {
+            "$ref": "#/definitions/package_regex"
+          }
+        ]
+      }
     }
   },
   "additionalProperties": false
