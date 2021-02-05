@@ -7,10 +7,39 @@ use std::{env, fs::File, io::Read};
 use std::{fs, io::Cursor, ops::Deref};
 
 //config types
+
+fn default_package_rule_operation() -> OperationEnum {
+    OperationEnum::Include
+}
+
 #[derive(Serialize, Deserialize, Debug)]
-struct Package {
+enum OperationEnum {
+    #[serde(rename = "include")]
+    Include,
+    #[serde(rename = "exclude")]
+    Exclude,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct PackageSingle {
     id: String,
-    local_dir: Option<String>,
+    #[serde(default = "default_package_rule_operation")]
+    operation: OperationEnum,
+}
+#[derive(Serialize, Deserialize, Debug)]
+struct PackageRegex {
+    #[serde(default = "default_package_rule_operation")]
+    operation: OperationEnum,
+    pattern: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")]
+enum PackageRuleEnum {
+    #[serde(rename = "regex")]
+    Regex(PackageRegex),
+    #[serde(rename = "single")]
+    Single(PackageSingle),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -45,7 +74,7 @@ struct Tenant {
 struct Config {
     cpisync: String,
     tenant: Tenant,
-    packages: Vec<Package>,
+    package_rules: Vec<PackageRuleEnum>,
 }
 
 //cli type
@@ -96,22 +125,17 @@ fn pause() {
 }
 
 async fn process_package(
-    package: &Package,
+    package_id: &str,
     config: &Config,
     client: &reqwest::Client,
     authorization: &str,
     data_dir: &std::path::PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let package_path = match &package.local_dir {
-        Some(str) => &str,
-        None => &package.id,
-    };
-
-    println!("Processing Package: {:?}", package);
+    println!("Processing Package: {:?}", package_id);
     let api_package_artifact_list_url = format!(
         "https://{host}/api/v1/IntegrationPackages('{package_id}')/IntegrationDesigntimeArtifacts",
         host = config.tenant.management_host,
-        package_id = package.id
+        package_id = package_id
     );
     let resp = client
         .get(&api_package_artifact_list_url)
@@ -169,10 +193,7 @@ async fn process_package(
 
             let outpath = file.enclosed_name().unwrap().to_owned();
 
-            let write_dir = data_dir
-                .join(&package_path)
-                .join(&artifact.id)
-                .join(outpath);
+            let write_dir = data_dir.join(&package_id).join(&artifact.id).join(outpath);
 
             fs::create_dir_all(&write_dir.parent().unwrap()).unwrap();
 
@@ -212,7 +233,7 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
 
     let config: Config = serde_json::from_str(&config_str)?;
 
-    // println!("config: {:?}", config);
+    //println!("config: {:?}", config);
     //println!("Using input file: {:?}", opts);
 
     let client = reqwest::Client::new();
@@ -344,9 +365,11 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
     let mut data_dir = std::path::PathBuf::from(&opts.config);
     data_dir = data_dir.parent().unwrap().to_path_buf();
 
+    let package_list: Vec<String> = Vec::new();
+
     //fetch package artifacts
-    for package in config.packages.iter() {
-        process_package(package, &config, &client, &authorization, &data_dir).await?;
+    for package_id in package_list.iter() {
+        process_package(package_id, &config, &client, &authorization, &data_dir).await?;
     }
 
     Ok(())
