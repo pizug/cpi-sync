@@ -54,7 +54,7 @@ struct Config {
 struct Opts {
     #[clap(short, long, default_value = "./cpi-sync.json")]
     config: String,
-    #[clap(long)]
+    #[clap(long, about = "Disable features that require user input")]
     no_input: bool,
 }
 
@@ -93,6 +93,94 @@ fn pause() {
             _ => {}
         }
     }
+}
+
+async fn process_package(
+    package: &Package,
+    config: &Config,
+    client: &reqwest::Client,
+    authorization: &str,
+    data_dir: &std::path::PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let package_path = match &package.local_dir {
+        Some(str) => &str,
+        None => &package.id,
+    };
+
+    println!("Processing Package: {:?}", package);
+    let api_package_artifact_list_url = format!(
+        "https://{host}/api/v1/IntegrationPackages('{package_id}')/IntegrationDesigntimeArtifacts",
+        host = config.tenant.management_host,
+        package_id = package.id
+    );
+    let resp = client
+        .get(&api_package_artifact_list_url)
+        .header("Authorization", authorization)
+        .header("Accept", "application/json")
+        .send()
+        .await?;
+
+    let resp_success = &resp.status().is_success();
+    let resp_code = resp.status();
+
+    let body_text = resp.text().await?;
+
+    if !resp_success {
+        println!("Package Download Failed!");
+        println!("API URL: {}", &api_package_artifact_list_url);
+        println!("API Response Code: {:#?}", &resp_code);
+        println!("Response Body:");
+        println!("{}", &body_text);
+        return Err(
+            std::io::Error::new(std::io::ErrorKind::Other, "API Package Download Failed!").into(),
+        );
+    }
+
+    let resp_obj: APIResponseRoot = match serde_json::from_slice(body_text.as_bytes()) {
+        Ok(api_resp) => api_resp,
+        Err(err) => {
+            println!("Package Download Failed!");
+            println!("API URL: {}", &api_package_artifact_list_url);
+            println!("API Response Code: {:#?}", &resp_code);
+            println!("Response Body:");
+            println!("{}", &body_text);
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, err).into());
+        }
+    };
+
+    for artifact in resp_obj.d.results {
+        println!("- Artifact: {:#?}", artifact.id);
+
+        let api_artifact_payload_url = format!("https://{host}/api/v1/IntegrationDesigntimeArtifacts(Id='{artifact_id}',Version='Active')/$value",
+        host=config.tenant.management_host,artifact_id= artifact.id);
+        let resp = client
+            .get(&api_artifact_payload_url)
+            .header("Authorization", authorization)
+            .send()
+            .await?;
+
+        let respbytes = resp.bytes().await?;
+        let respbytes_cursor = Cursor::new(respbytes.deref());
+
+        let mut archive = zip::ZipArchive::new(respbytes_cursor).unwrap();
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).unwrap();
+
+            let outpath = file.enclosed_name().unwrap().to_owned();
+
+            let write_dir = data_dir
+                .join(&package_path)
+                .join(&artifact.id)
+                .join(outpath);
+
+            fs::create_dir_all(&write_dir.parent().unwrap()).unwrap();
+
+            let mut write_dir = fs::File::create(&write_dir).unwrap();
+            std::io::copy(&mut file, &mut write_dir).unwrap();
+        }
+    }
+    Ok(())
 }
 
 async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
@@ -246,9 +334,11 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
     let resp_code = resp.status();
 
     if !resp_success {
-        println!("API Check Failed!");
+        println!("API First Check Failed!");
         println!("API Response Code: {:#?}", resp_code);
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "API Check Failed!").into());
+    } else {
+        println!("API First Check Successful.");
     }
 
     let mut data_dir = std::path::PathBuf::from(&opts.config);
@@ -256,55 +346,7 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
 
     //fetch package artifacts
     for package in config.packages.iter() {
-        let package_path = match &package.local_dir {
-            Some(str) => &str,
-            None => &package.id,
-        };
-
-        println!("Processing Package: {:?}", package);
-        let api_package_artifact_list_url= format!("https://{host}/api/v1/IntegrationPackages('{package_id}')/IntegrationDesigntimeArtifacts",
-        host=config.tenant.management_host,package_id= package.id);
-        let resp = client
-            .get(&api_package_artifact_list_url)
-            .header("Authorization", &authorization)
-            .header("Accept", "application/json")
-            .send()
-            .await?
-            .json::<APIResponseRoot>()
-            .await?;
-
-        for artifact in resp.d.results {
-            println!("- Artifact: {:#?}", artifact.id);
-
-            let api_artifact_payload_url = format!("https://{host}/api/v1/IntegrationDesigntimeArtifacts(Id='{artifact_id}',Version='Active')/$value",
-            host=config.tenant.management_host,artifact_id= artifact.id);
-            let resp = client
-                .get(&api_artifact_payload_url)
-                .header("Authorization", &authorization)
-                .send()
-                .await?;
-
-            let respbytes = resp.bytes().await?;
-            let respbytes_cursor = Cursor::new(respbytes.deref());
-
-            let mut archive = zip::ZipArchive::new(respbytes_cursor).unwrap();
-
-            for i in 0..archive.len() {
-                let mut file = archive.by_index(i).unwrap();
-
-                let outpath = file.enclosed_name().unwrap().to_owned();
-
-                let write_dir = data_dir
-                    .join(&package_path)
-                    .join(&artifact.id)
-                    .join(outpath);
-
-                fs::create_dir_all(&write_dir.parent().unwrap()).unwrap();
-
-                let mut write_dir = fs::File::create(&write_dir).unwrap();
-                std::io::copy(&mut file, &mut write_dir).unwrap();
-            }
-        }
+        process_package(package, &config, &client, &authorization, &data_dir).await?;
     }
 
     Ok(())
