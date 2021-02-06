@@ -1,6 +1,9 @@
 use clap::Clap;
 use crossterm::event::{read, Event};
 use jsonschema::{self, Draft, JSONSchema};
+use path_absolutize::Absolutize;
+use path_slash::{PathBufExt, PathExt};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
 use std::{
@@ -8,6 +11,8 @@ use std::{
     env,
     fs::File,
     io::Read,
+    iter::FromIterator,
+    path::PathBuf,
 };
 use std::{fs, io::Cursor, ops::Deref};
 
@@ -198,11 +203,23 @@ async fn process_package(
         for i in 0..archive.len() {
             let mut file = archive.by_index(i).unwrap();
 
-            let outpath = file.enclosed_name().unwrap().to_owned();
+            let outpath_str = file.enclosed_name().unwrap().to_str().unwrap();
+            let outpath: PathBuf = PathBuf::from_slash(outpath_str);
 
-            let write_dir = data_dir.join(&package_id).join(&artifact.id).join(outpath);
+            // println!(
+            //     "data_dir: {:?} , package_id:{:?} , artifact_id: {:?}, outpath: {:?}",
+            //     &data_dir, &package_id, &artifact.id, &outpath
+            // );
+            let write_dir = data_dir
+                .canonicalize()
+                .unwrap()
+                .join(&package_id)
+                .join(&artifact.id)
+                .join(outpath);
+            // println!("write_dir: {:?} ", &write_dir);
 
-            fs::create_dir_all(&write_dir.parent().unwrap()).unwrap();
+            let parent_dir = write_dir.parent().unwrap();
+            fs::create_dir_all(parent_dir).unwrap();
 
             let mut write_dir = fs::File::create(&write_dir).unwrap();
             std::io::copy(&mut file, &mut write_dir).unwrap();
@@ -436,19 +453,72 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
         };
     }
 
-    let operating_package_set: HashSet<String> = HashSet::new();
+    let mut operating_package_set: HashSet<String> = HashSet::new();
 
     for package_rule in config.package_rules.iter() {
+        let mut rule_package_set: HashSet<String> = HashSet::new();
         match package_rule {
             PackageRuleEnum::Regex(rule) => {
+                let re = Regex::new(&rule.pattern)?;
+
+                for p in &api_package_set {
+                    if re.is_match(&p) {
+                        rule_package_set.insert(p.clone());
+                    }
+                }
+
                 // rule.operation
+                match rule.operation {
+                    OperationEnum::Include => {
+                        //operating_package_set.union(&rule_package_set);
+                        operating_package_set.extend(rule_package_set);
+                    }
+                    OperationEnum::Exclude => {
+                        operating_package_set = operating_package_set
+                            .difference(&rule_package_set)
+                            .cloned()
+                            .collect();
+                    }
+                }
             }
-            PackageRuleEnum::Single(rule) => {}
+            PackageRuleEnum::Single(rule) => {
+                //if single package rule not found in original package list check names and inform.
+                if !api_package_set.contains(&rule.id) {
+                    println!("Package ID not found: {}", &rule.id);
+
+                    match api_package_name_map.get(&rule.id) {
+                        Some(id_for_name) => {
+                            println!(
+                                "Did you enter the Package name instead of this Package ID?: '{}'",
+                                id_for_name
+                            );
+                        }
+                        None => {}
+                    }
+
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "Package ID not found!",
+                    )
+                    .into());
+                }
+
+                match rule.operation {
+                    OperationEnum::Include => {
+                        operating_package_set.insert(rule.id.clone());
+                    }
+                    OperationEnum::Exclude => {
+                        operating_package_set.remove(&rule.id);
+                    }
+                }
+            }
         }
     }
-    //if single package rule not found in original package list check names and inform.
 
-    let package_list: Vec<String> = Vec::new();
+    let package_list: Vec<String> = Vec::from_iter(operating_package_set);
+
+    println!("Downloading These Packages:");
+    println!("{:?}", &package_list);
 
     //fetch package artifacts
     for package_id in package_list.iter() {
