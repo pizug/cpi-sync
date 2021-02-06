@@ -21,6 +21,13 @@ use std::{fs, io::Cursor, ops::Deref};
 fn default_package_rule_operation() -> OperationEnum {
     OperationEnum::Include
 }
+fn default_extract_zip() -> ZipExtraction {
+    ZipExtraction::Enabled
+}
+
+fn default_packages_local_dir() -> String {
+    ".".to_string()
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 enum OperationEnum {
@@ -50,6 +57,23 @@ enum PackageRuleEnum {
     Regex(PackageRegex),
     #[serde(rename = "single")]
     Single(PackageSingle),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum ZipExtraction {
+    #[serde(rename = "disabled")]
+    Disabled,
+    #[serde(rename = "enabled")]
+    Enabled,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Packages {
+    #[serde(default = "default_extract_zip")]
+    zip_extraction: ZipExtraction,
+    #[serde(default = "default_packages_local_dir")]
+    local_dir: String,
+    filter_rules: Vec<PackageRuleEnum>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -84,12 +108,12 @@ struct Tenant {
 struct Config {
     cpisync: String,
     tenant: Tenant,
-    package_rules: Vec<PackageRuleEnum>,
+    packages: Packages,
 }
 
 //cli type
 #[derive(Clap, Debug)]
-#[clap(version = "0.1.0", author = "Fatih Pense @ pizug.com")]
+#[clap(version = "0.2.0", author = "Fatih Pense @ pizug.com")]
 struct Opts {
     #[clap(short, long, default_value = "./cpi-sync.json")]
     config: String,
@@ -196,33 +220,50 @@ async fn process_package(
             .await?;
 
         let respbytes = resp.bytes().await?;
-        let respbytes_cursor = Cursor::new(respbytes.deref());
+        let mut respbytes_cursor = Cursor::new(respbytes.deref());
 
-        let mut archive = zip::ZipArchive::new(respbytes_cursor).unwrap();
+        match config.packages.zip_extraction {
+            ZipExtraction::Disabled => {
+                let write_dir = data_dir
+                    .canonicalize()
+                    .unwrap()
+                    .join(&package_id)
+                    .join(artifact.id.to_string() + ".zip");
 
-        for i in 0..archive.len() {
-            let mut file = archive.by_index(i).unwrap();
+                let parent_dir = write_dir.parent().unwrap();
+                fs::create_dir_all(parent_dir).unwrap();
 
-            let outpath_str = file.enclosed_name().unwrap().to_str().unwrap();
-            let outpath: PathBuf = PathBuf::from_slash(outpath_str);
+                let mut write_dir = fs::File::create(&write_dir).unwrap();
+                std::io::copy(&mut respbytes_cursor, &mut write_dir).unwrap();
+            }
+            ZipExtraction::Enabled => {
+                let mut archive = zip::ZipArchive::new(respbytes_cursor).unwrap();
 
-            // println!(
-            //     "data_dir: {:?} , package_id:{:?} , artifact_id: {:?}, outpath: {:?}",
-            //     &data_dir, &package_id, &artifact.id, &outpath
-            // );
-            let write_dir = data_dir
-                .canonicalize()
-                .unwrap()
-                .join(&package_id)
-                .join(&artifact.id)
-                .join(outpath);
-            // println!("write_dir: {:?} ", &write_dir);
+                for i in 0..archive.len() {
+                    let mut file = archive.by_index(i).unwrap();
 
-            let parent_dir = write_dir.parent().unwrap();
-            fs::create_dir_all(parent_dir).unwrap();
+                    let outpath_str = file.enclosed_name().unwrap().to_str().unwrap();
+                    let outpath: PathBuf = PathBuf::from_slash(outpath_str);
 
-            let mut write_dir = fs::File::create(&write_dir).unwrap();
-            std::io::copy(&mut file, &mut write_dir).unwrap();
+                    // println!(
+                    //     "data_dir: {:?} , package_id:{:?} , artifact_id: {:?}, outpath: {:?}",
+                    //     &data_dir, &package_id, &artifact.id, &outpath
+                    // );
+                    let write_dir = data_dir
+                        .canonicalize()
+                        .unwrap()
+                        .join(&package_id)
+                        .join(&artifact.id)
+                        .join(outpath);
+                    // println!("write_dir: {:?} ", &write_dir);
+
+                    let parent_dir = write_dir.parent().unwrap();
+                    fs::create_dir_all(parent_dir).unwrap();
+
+                    let mut write_dir = fs::File::create(&write_dir).unwrap();
+                    std::io::copy(&mut file, &mut write_dir).unwrap();
+                }
+            }
         }
     }
     Ok(())
@@ -301,6 +342,11 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
         for error in errors {
             println!("Validation error: {}", error);
         }
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "JSON Schema validation error.",
+        )
+        .into());
     }
 
     let config: Config = serde_json::from_str(&config_str)?;
@@ -455,7 +501,7 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
 
     let mut operating_package_set: HashSet<String> = HashSet::new();
 
-    for package_rule in config.package_rules.iter() {
+    for package_rule in config.packages.filter_rules.iter() {
         let mut rule_package_set: HashSet<String> = HashSet::new();
         match package_rule {
             PackageRuleEnum::Regex(rule) => {

@@ -4,6 +4,10 @@
   "type": "object",
   "title": "cpisync config schema",
   "definitions": {
+    "enum_enabled_disabled": {
+      "type": "string",
+      "enum": ["enabled", "disabled"]
+    },
     "credential_s_user": {
       "type": "object",
       "required": ["username"],
@@ -58,7 +62,7 @@
       ],
       "additionalProperties": false
     },
-    "package_single": {
+    "package_rule_single": {
       "type": "object",
       "required": ["id", "type"],
       "properties": {
@@ -71,17 +75,19 @@
           "minLength": 1
         },
         "operation": {
+          "description": "default: include",
           "type": "string",
           "enum": ["include", "exclude"]
         }
       },
       "additionalProperties": false
     },
-    "package_regex": {
+    "package_rule_regex": {
       "type": "object",
       "required": ["pattern", "type"],
       "properties": {
         "operation": {
+          "description": "default: include",
           "type": "string",
           "enum": ["include", "exclude"]
         },
@@ -97,14 +103,30 @@
         }
       },
       "additionalProperties": false
+    },
+
+    "package_filter_rules": {
+      "description": "For filters the packages are always selected from the original tenant list, operations are applied to list at hand, last rule is the most important.",
+      "type": "array",
+      "additionalItems": false,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/definitions/package_rule_single"
+          },
+          {
+            "$ref": "#/definitions/package_rule_regex"
+          }
+        ]
+      }
     }
   },
-  "required": ["cpisync", "tenant", "package_rules"],
+  "required": ["cpisync", "tenant", "packages"],
   "properties": {
     "cpisync": {
       "type": "string",
       "title": "The CPISync schema version",
-      "const": "0.1.0"
+      "const": "0.2.0"
     },
     "tenant": {
       "type": "object",
@@ -121,19 +143,21 @@
       },
       "additionalProperties": false
     },
-    "package_rules": {
-      "type": "array",
-      "additionalItems": false,
-      "items": {
-        "oneOf": [
-          {
-            "$ref": "#/definitions/package_single"
-          },
-          {
-            "$ref": "#/definitions/package_regex"
-          }
-        ]
-      }
+    "packages": {
+      "type": "object",
+      "required": ["filter_rules"],
+      "properties": {
+        "local_dir": {
+          "type": "string"
+        },
+        "zip_extraction": {
+          "$ref": "#/definitions/enum_enabled_disabled"
+        },
+
+        "filter_rules": { "$ref": "#/definitions/package_filter_rules" }
+      },
+
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

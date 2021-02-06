@@ -23,7 +23,7 @@ It has two main configurations that are documented below:
 
 ```json
 {
-  "cpisync": "0.1.0",
+  "cpisync": "0.2.0",
 
   "tenant": {
     "management_host": "change-tmn.hci.eu1change.hana.ondemand.com",
@@ -34,11 +34,15 @@ It has two main configurations that are documented below:
       }
     }
   },
-  "packages": [
-    { "id": "TrainingPackage" },
-    { "id": "eDocumentElectronicInvoicingforYou" },
-    { "id": "MYPACKAGE", "local_dir": "my_package_to_different_directory" }
-  ]
+  "packages": {
+    "filter_rules": [
+      { "type": "single", "id": "TrainingPackage" },
+      { "type": "single", "id": "eDocumentElectronicInvoicingforYou" },
+      { "type": "single", "id": "MYPACKAGE" },
+      { "type": "regex", "pattern": ".*", "operation": "include" },
+      { "type": "regex", "pattern": "Test.*", "operation": "exclude" }
+    ]
+  }
 }
 ```
 
@@ -75,7 +79,7 @@ Create an OAuth client for your tenant. Use `oauth_client_credentials` object un
 
 ## Updates
 
-When you download a new version of the tool. Schema version will be updated and you may need to change version like `"cpisync": "0.1.0"` , preferably after checking the documentation!
+When you download a new version of the tool. Schema version will be updated and you may need to change version like `"cpisync": "0.2.0"` , preferably after checking the documentation!
 
 There may be occasional breaking changes on the format, advice & feedback from the community will play a big role.
 
