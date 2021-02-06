@@ -225,8 +225,6 @@ async fn process_package(
         match config.packages.zip_extraction {
             ZipExtraction::Disabled => {
                 let write_dir = data_dir
-                    .canonicalize()
-                    .unwrap()
                     .join(&package_id)
                     .join(artifact.id.to_string() + ".zip");
 
@@ -481,7 +479,13 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut data_dir = std::path::PathBuf::from(&opts.config);
-    data_dir = data_dir.parent().unwrap().to_path_buf();
+    data_dir = data_dir
+        .parent()
+        .unwrap()
+        .canonicalize()
+        .unwrap()
+        .join(&config.packages.local_dir)
+        .to_path_buf();
 
     let api_package_list = get_all_packages(&config, &client, &authorization).await?;
 
