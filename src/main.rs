@@ -128,6 +128,8 @@ struct APIResponseResult {
     id: String,
     #[serde(rename = "Name")]
     name: String,
+    #[serde(rename = "Mode")]
+    mode: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -186,14 +188,16 @@ async fn process_package(
     let body_text = resp.text().await?;
 
     if !resp_success {
-        println!("Package Download Failed!");
+        println!("API Package List Artifacts Failed!");
         println!("API URL: {}", &api_package_artifact_list_url);
         println!("API Response Code: {:#?}", &resp_code);
         println!("Response Body:");
         println!("{}", &body_text);
-        return Err(
-            std::io::Error::new(std::io::ErrorKind::Other, "API Package Download Failed!").into(),
-        );
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "API Package List Artifacts Failed!",
+        )
+        .into());
     }
 
     let resp_obj: APIResponseRoot = match serde_json::from_slice(body_text.as_bytes()) {
@@ -218,6 +222,23 @@ async fn process_package(
             .header("Authorization", authorization)
             .send()
             .await?;
+
+        let resp_success = &resp.status().is_success();
+        let resp_code = resp.status();
+
+        if !resp_success {
+            println!("Artifact Download Failed!");
+            println!("API URL: {}", &api_artifact_payload_url);
+            println!("API Response Code: {:#?}", &resp_code);
+            println!("Response Body:");
+            let body_text = resp.text().await?;
+            println!("{}", &body_text);
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "API Artifact Download Failed!",
+            )
+            .into());
+        }
 
         let respbytes = resp.bytes().await?;
         let mut respbytes_cursor = Cursor::new(respbytes.deref());
