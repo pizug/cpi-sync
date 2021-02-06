@@ -3,7 +3,12 @@ use crossterm::event::{read, Event};
 use jsonschema::{self, Draft, JSONSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
-use std::{env, fs::File, io::Read};
+use std::{
+    collections::{HashMap, HashSet},
+    env,
+    fs::File,
+    io::Read,
+};
 use std::{fs, io::Cursor, ops::Deref};
 
 //config types
@@ -92,6 +97,8 @@ struct Opts {
 struct APIResponseResult {
     #[serde(rename = "Id")]
     id: String,
+    #[serde(rename = "Name")]
+    name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -202,6 +209,54 @@ async fn process_package(
         }
     }
     Ok(())
+}
+
+async fn get_all_packages(
+    config: &Config,
+    client: &reqwest::Client,
+    authorization: &str,
+) -> Result<APIResponseRoot, Box<dyn std::error::Error>> {
+    let api_package_list_url = format!(
+        "https://{host}/api/v1/IntegrationPackages",
+        host = config.tenant.management_host
+    );
+    let resp = client
+        .get(&api_package_list_url)
+        .header("Authorization", authorization)
+        .header("Accept", "application/json")
+        .send()
+        .await?;
+
+    let resp_success = &resp.status().is_success();
+    let resp_code = resp.status();
+
+    let body_text = resp.text().await?;
+
+    if !resp_success {
+        println!("Package List Failed!");
+        println!("API URL: {}", &api_package_list_url);
+        println!("API Response Code: {:#?}", &resp_code);
+        println!("Response Body:");
+        println!("{}", &body_text);
+        return Err(
+            std::io::Error::new(std::io::ErrorKind::Other, "API Package List  Failed!").into(),
+        );
+    }
+
+    let resp_obj: APIResponseRoot = match serde_json::from_slice(body_text.as_bytes()) {
+        Ok(api_resp) => api_resp,
+        Err(err) => {
+            println!("Package List Failed!");
+            println!("API URL: {}", &api_package_list_url);
+            println!("API Response Code: {:#?}", &resp_code);
+            println!("Response Body:");
+            println!("{}", &body_text);
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, err).into());
+        }
+    };
+    //println!("{:?}", &resp_obj);
+
+    Ok(resp_obj)
 }
 
 async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
@@ -364,6 +419,34 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
 
     let mut data_dir = std::path::PathBuf::from(&opts.config);
     data_dir = data_dir.parent().unwrap().to_path_buf();
+
+    let api_package_list = get_all_packages(&config, &client, &authorization).await?;
+
+    let mut api_package_set: HashSet<String> = HashSet::new();
+    let mut api_package_name_map: HashMap<String, String> = HashMap::new();
+    for package in api_package_list.d.results.iter() {
+        api_package_set.insert(package.id.to_string());
+        match api_package_name_map.entry(package.name.to_string()) {
+            std::collections::hash_map::Entry::Occupied(mut e) => {
+                e.insert(e.get().clone() + "," + &package.id);
+            }
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(package.id.to_string());
+            }
+        };
+    }
+
+    let operating_package_set: HashSet<String> = HashSet::new();
+
+    for package_rule in config.package_rules.iter() {
+        match package_rule {
+            PackageRuleEnum::Regex(rule) => {
+                // rule.operation
+            }
+            PackageRuleEnum::Single(rule) => {}
+        }
+    }
+    //if single package rule not found in original package list check names and inform.
 
     let package_list: Vec<String> = Vec::new();
 
