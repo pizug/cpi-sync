@@ -26,7 +26,7 @@ fn default_extract_zip() -> ZipExtraction {
 }
 
 fn default_packages_local_dir() -> String {
-    ".".to_string()
+    "".to_string()
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -113,7 +113,7 @@ struct Config {
 
 //cli type
 #[derive(Clap, Debug)]
-#[clap(version = "0.2.0", author = "Fatih Pense @ pizug.com")]
+#[clap(version = "0.2.1", author = "Fatih Pense @ pizug.com")]
 struct Opts {
     #[clap(short, long, default_value = "./cpi-sync.json")]
     config: String,
@@ -269,8 +269,6 @@ async fn process_package(
                     //     &data_dir, &package_id, &artifact.id, &outpath
                     // );
                     let write_dir = data_dir
-                        .canonicalize()
-                        .unwrap()
                         .join(&package_id)
                         .join(&artifact.id)
                         .join(outpath);
