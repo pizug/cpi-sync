@@ -10,11 +10,12 @@ use std::{
     collections::{HashMap, HashSet},
     env,
     fs::File,
-    io::Read,
+    io::{BufRead, BufReader, Lines, Read, Write},
     iter::FromIterator,
     path::PathBuf,
 };
 use std::{fs, io::Cursor, ops::Deref};
+use zip::read::ZipFile;
 
 //config types
 
@@ -23,6 +24,10 @@ fn default_package_rule_operation() -> OperationEnum {
 }
 fn default_extract_zip() -> ZipExtraction {
     ZipExtraction::Enabled
+}
+
+fn default_prop_comment_removal() -> PropCommentRemoval {
+    PropCommentRemoval::Disabled
 }
 
 fn default_packages_local_dir() -> String {
@@ -68,9 +73,19 @@ enum ZipExtraction {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+enum PropCommentRemoval {
+    #[serde(rename = "disabled")]
+    Disabled,
+    #[serde(rename = "enabled")]
+    Enabled,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 struct Packages {
     #[serde(default = "default_extract_zip")]
     zip_extraction: ZipExtraction,
+    #[serde(default = "default_prop_comment_removal")]
+    prop_comment_removal: PropCommentRemoval,
     #[serde(default = "default_packages_local_dir")]
     local_dir: String,
     filter_rules: Vec<PackageRuleEnum>,
@@ -113,7 +128,7 @@ struct Config {
 
 //cli type
 #[derive(Clap, Debug)]
-#[clap(version = "0.2.1", author = "Fatih Pense @ pizug.com")]
+#[clap(version = "0.2.1", author = "Fatih.Pense @ pizug.com")]
 struct Opts {
     #[clap(short, long, default_value = "./cpi-sync.json")]
     config: String,
@@ -212,6 +227,10 @@ async fn process_package(
         }
     };
 
+    //remove local package contents before download
+    let package_dir = data_dir.join(&package_id);
+    let _ = fs::remove_dir_all(package_dir);
+
     for artifact in resp_obj.d.results {
         println!("- Artifact: {:#?}", artifact.id);
 
@@ -268,17 +287,40 @@ async fn process_package(
                     //     "data_dir: {:?} , package_id:{:?} , artifact_id: {:?}, outpath: {:?}",
                     //     &data_dir, &package_id, &artifact.id, &outpath
                     // );
-                    let write_dir = data_dir
-                        .join(&package_id)
-                        .join(&artifact.id)
-                        .join(outpath);
+                    let write_dir = data_dir.join(&package_id).join(&artifact.id).join(outpath);
                     // println!("write_dir: {:?} ", &write_dir);
 
                     let parent_dir = write_dir.parent().unwrap();
                     fs::create_dir_all(parent_dir).unwrap();
-
                     let mut write_dir = fs::File::create(&write_dir).unwrap();
-                    std::io::copy(&mut file, &mut write_dir).unwrap();
+
+                    match config.packages.prop_comment_removal {
+                        PropCommentRemoval::Disabled => {
+                            std::io::copy(&mut file, &mut write_dir).unwrap();
+                        }
+                        PropCommentRemoval::Enabled => {
+                            if outpath_str.ends_with("parameters.prop") {
+                                let mut prop_content = String::new();
+                                file.read_to_string(&mut prop_content)?;
+
+                                let prop_lines: Vec<&str> = prop_content
+                                    .lines()
+                                    .filter(|l| !l.starts_with("#"))
+                                    .collect();
+
+                                for line in prop_lines {
+                                    write_dir
+                                        .write_all(line.as_bytes())
+                                        .expect("Couldn't write to file");
+
+                                    write_dir.write_all(b"\n").expect("Couldn't write to file");
+                                }
+                            // write_dir.write_all(lines.as_bytes());
+                            } else {
+                                std::io::copy(&mut file, &mut write_dir).unwrap();
+                            }
+                        }
+                    }
                 }
             }
         }

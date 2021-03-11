@@ -153,6 +153,9 @@
         "zip_extraction": {
           "$ref": "#/definitions/enum_enabled_disabled"
         },
+        "prop_comment_removal": {
+          "$ref": "#/definitions/enum_enabled_disabled"
+        },
 
         "filter_rules": { "$ref": "#/definitions/package_filter_rules" }
       },
