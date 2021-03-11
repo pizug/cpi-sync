@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.1] - 2021-03-12
+
+- Fix: reported path issues
+- Add: `prop_comment_removal` option to remove auto-generated timestamp comments in `parameters.prop`
+- Add: Remove local package content before sync
+- Add: musl libc binary for Alpine docker images
+
 ## [0.2.0] - 2021-02-06
 
 - Config change: change package rules, add regex, include/exclude operation
