@@ -19,116 +19,12 @@ use zip::read::ZipFile;
 
 //config types
 
-fn default_package_rule_operation() -> OperationEnum {
-    OperationEnum::Include
-}
-fn default_extract_zip() -> ZipExtraction {
-    ZipExtraction::Enabled
-}
-
-fn default_prop_comment_removal() -> PropCommentRemoval {
-    PropCommentRemoval::Disabled
-}
-
-fn default_packages_local_dir() -> String {
-    "".to_string()
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-enum OperationEnum {
-    #[serde(rename = "include")]
-    Include,
-    #[serde(rename = "exclude")]
-    Exclude,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct PackageSingle {
-    id: String,
-    #[serde(default = "default_package_rule_operation")]
-    operation: OperationEnum,
-}
-#[derive(Serialize, Deserialize, Debug)]
-struct PackageRegex {
-    #[serde(default = "default_package_rule_operation")]
-    operation: OperationEnum,
-    pattern: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")]
-enum PackageRuleEnum {
-    #[serde(rename = "regex")]
-    Regex(PackageRegex),
-    #[serde(rename = "single")]
-    Single(PackageSingle),
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-enum ZipExtraction {
-    #[serde(rename = "disabled")]
-    Disabled,
-    #[serde(rename = "enabled")]
-    Enabled,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-enum PropCommentRemoval {
-    #[serde(rename = "disabled")]
-    Disabled,
-    #[serde(rename = "enabled")]
-    Enabled,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Packages {
-    #[serde(default = "default_extract_zip")]
-    zip_extraction: ZipExtraction,
-    #[serde(default = "default_prop_comment_removal")]
-    prop_comment_removal: PropCommentRemoval,
-    #[serde(default = "default_packages_local_dir")]
-    local_dir: String,
-    filter_rules: Vec<PackageRuleEnum>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct CredentialSUser {
-    username: String,
-    password_environment_variable: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct CredentialOauthClientCredentials {
-    client_id: String,
-    token_endpoint_url: String,
-    client_secret_environment_variable: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-enum CredentialInside {
-    #[serde(rename = "oauth_client_credentials")]
-    OauthClientCredentials(CredentialOauthClientCredentials),
-    #[serde(rename = "s_user")]
-    SUser(CredentialSUser),
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Tenant {
-    management_host: String,
-    credential: CredentialInside,
-    // credential: CredentialInside,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Config {
-    cpisync: String,
-    tenant: Tenant,
-    packages: Packages,
-}
+mod config;
+use config::*;
 
 //cli type
 #[derive(Clap, Debug)]
-#[clap(version = "0.2.1", author = "Fatih.Pense @ pizug.com")]
+#[clap(version = "0.3.0-beta", author = "Fatih.Pense @ pizug.com")]
 struct Opts {
     #[clap(short, long, default_value = "./cpi-sync.json")]
     config: String,
@@ -376,7 +272,7 @@ async fn get_all_packages(
     Ok(resp_obj)
 }
 
-async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_console(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
     println!("Start CPI Sync?");
     if !opts.no_input {
         pause();
@@ -410,6 +306,14 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
 
     let config: Config = serde_json::from_str(&config_str)?;
 
+    return run_with_config(&config, &opts.config, opts.no_input).await;
+}
+
+async fn run_with_config(
+    config: &Config,
+    config_path: &String,
+    no_input: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     //println!("config: {:?}", config);
     //println!("Using input file: {:?}", opts);
 
@@ -465,7 +369,7 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
         CredentialInside::SUser(c) => c.username.to_string(),
     };
     //try to get password from command line
-    if !opts.no_input {
+    if !no_input {
         match &password {
             None => {
                 let message = format!(
@@ -539,7 +443,7 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
         println!("API First Check Successful.");
     }
 
-    let mut data_dir = std::path::PathBuf::from(&opts.config);
+    let mut data_dir = std::path::PathBuf::from(&config_path);
     data_dir = data_dir
         .parent()
         .unwrap()
@@ -642,7 +546,7 @@ async fn run(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
-    let result = run(&opts).await;
+    let result = run_console(&opts).await;
 
     match result {
         Ok(()) => {
