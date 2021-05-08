@@ -1,21 +1,8 @@
 use clap::Clap;
 use crossterm::event::{read, Event};
 use jsonschema::{self, Draft, JSONSchema};
-use path_absolutize::Absolutize;
-use path_slash::{PathBufExt, PathExt};
-use regex::Regex;
-use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
-use std::{
-    collections::{HashMap, HashSet},
-    env,
-    fs::File,
-    io::{BufRead, BufReader, Lines, Read, Write},
-    iter::FromIterator,
-    path::PathBuf,
-};
-use std::{fs, io::Cursor, ops::Deref};
-use zip::read::ZipFile;
+use std::{fs::File, io::Read};
 
 //config types
 
@@ -80,6 +67,7 @@ async fn run_console(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
     return cpi_sync::run_with_config(&config, &opts.config, opts.no_input).await;
 }
 
+#[allow(clippy::needless_return)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts: Opts = Opts::parse();
@@ -98,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !opts.no_input {
                 pause();
             }
-            return Err(err.into());
+            return Err(err);
         }
     };
 }

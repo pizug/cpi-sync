@@ -1,14 +1,12 @@
 mod config;
 use config::*;
-use path_slash::{PathBufExt, PathExt};
+use path_slash::PathBufExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::{self, Value};
 use std::{
     collections::{HashMap, HashSet},
     env,
-    fs::File,
-    io::{BufRead, BufReader, Lines, Read, Write},
+    io::{Read, Write},
     iter::FromIterator,
     path::PathBuf,
 };
@@ -43,18 +41,92 @@ struct TokenAPIResponseRoot {
     access_token: String,
 }
 
-async fn process_package(
+async fn write_artifact(
     package_id: &str,
+    artifact_id: &str,
+    config: &Config,
+    data_dir: &std::path::PathBuf,
+    mut respbytes_cursor: Cursor<&[u8]>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match config.packages.zip_extraction {
+        ZipExtraction::Disabled => {
+            let write_dir = data_dir
+                .join(&package_id)
+                .join(artifact_id.to_string() + ".zip");
+
+            let parent_dir = write_dir.parent().unwrap();
+            fs::create_dir_all(parent_dir).unwrap();
+
+            let mut write_dir = fs::File::create(&write_dir).unwrap();
+            std::io::copy(&mut respbytes_cursor, &mut write_dir).unwrap();
+        }
+        ZipExtraction::Enabled => {
+            let mut archive = zip::ZipArchive::new(respbytes_cursor).unwrap();
+
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i).unwrap();
+
+                let outpath_str = file.enclosed_name().unwrap().to_str().unwrap();
+                let outpath: PathBuf = PathBuf::from_slash(outpath_str);
+
+                // println!(
+                //     "data_dir: {:?} , package_id:{:?} , artifact_id: {:?}, outpath: {:?}",
+                //     &data_dir, &package_id, &artifact.id, &outpath
+                // );
+                let write_dir = data_dir.join(&package_id).join(artifact_id).join(outpath);
+                // println!("write_dir: {:?} ", &write_dir);
+
+                let parent_dir = write_dir.parent().unwrap();
+                fs::create_dir_all(parent_dir).unwrap();
+                let mut write_dir = fs::File::create(&write_dir).unwrap();
+
+                match config.packages.prop_comment_removal {
+                    PropCommentRemoval::Disabled => {
+                        std::io::copy(&mut file, &mut write_dir).unwrap();
+                    }
+                    PropCommentRemoval::Enabled => {
+                        if outpath_str.ends_with("parameters.prop") {
+                            let mut prop_content = String::new();
+                            file.read_to_string(&mut prop_content)?;
+
+                            let prop_lines: Vec<&str> = prop_content
+                                .lines()
+                                .filter(|l| !l.starts_with("#"))
+                                .collect();
+
+                            for line in prop_lines {
+                                write_dir
+                                    .write_all(line.as_bytes())
+                                    .expect("Couldn't write to file");
+
+                                write_dir.write_all(b"\n").expect("Couldn't write to file");
+                            }
+                        // write_dir.write_all(lines.as_bytes());
+                        } else {
+                            std::io::copy(&mut file, &mut write_dir).unwrap();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn process_package_artifacts(
+    package_id: &str,
+    artifact_type: &str,
     config: &Config,
     client: &reqwest::Client,
     authorization: &str,
     data_dir: &std::path::PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Processing Package: {:?}", package_id);
     let api_package_artifact_list_url = format!(
-        "https://{host}/api/v1/IntegrationPackages('{package_id}')/IntegrationDesigntimeArtifacts",
+        "https://{host}/api/v1/IntegrationPackages('{package_id}')/{artifact_type}",
         host = config.tenant.management_host,
-        package_id = package_id
+        package_id = package_id,
+        artifact_type = artifact_type
     );
     let resp = client
         .get(&api_package_artifact_list_url)
@@ -70,6 +142,7 @@ async fn process_package(
 
     if !resp_success {
         println!("API Package List Artifacts Failed!");
+        println!("Artifact type: {}", &artifact_type);
         println!("API URL: {}", &api_package_artifact_list_url);
         println!("API Response Code: {:#?}", &resp_code);
         println!("Response Body:");
@@ -84,7 +157,8 @@ async fn process_package(
     let resp_obj: APIResponseRoot = match serde_json::from_slice(body_text.as_bytes()) {
         Ok(api_resp) => api_resp,
         Err(err) => {
-            println!("Package Download Failed!");
+            println!("API Package List Artifacts Parse Failed!");
+            println!("Artifact type: {}", &artifact_type);
             println!("API URL: {}", &api_package_artifact_list_url);
             println!("API Response Code: {:#?}", &resp_code);
             println!("Response Body:");
@@ -93,15 +167,15 @@ async fn process_package(
         }
     };
 
-    //remove local package contents before download
-    let package_dir = data_dir.join(&package_id);
-    let _ = fs::remove_dir_all(package_dir);
-
     for artifact in resp_obj.d.results {
         println!("- Artifact: {:#?}", artifact.id);
 
-        let api_artifact_payload_url = format!("https://{host}/api/v1/IntegrationDesigntimeArtifacts(Id='{artifact_id}',Version='Active')/$value",
-        host=config.tenant.management_host,artifact_id= artifact.id);
+        let api_artifact_payload_url = format!(
+            "https://{host}/api/v1/{artifact_type}(Id='{artifact_id}',Version='Active')/$value",
+            host = config.tenant.management_host,
+            artifact_id = artifact.id,
+            artifact_type = artifact_type
+        );
         let resp = client
             .get(&api_artifact_payload_url)
             .header("Authorization", authorization)
@@ -126,71 +200,46 @@ async fn process_package(
         }
 
         let respbytes = resp.bytes().await?;
-        let mut respbytes_cursor = Cursor::new(respbytes.deref());
+        let respbytes_cursor = Cursor::new(respbytes.deref());
 
-        match config.packages.zip_extraction {
-            ZipExtraction::Disabled => {
-                let write_dir = data_dir
-                    .join(&package_id)
-                    .join(artifact.id.to_string() + ".zip");
-
-                let parent_dir = write_dir.parent().unwrap();
-                fs::create_dir_all(parent_dir).unwrap();
-
-                let mut write_dir = fs::File::create(&write_dir).unwrap();
-                std::io::copy(&mut respbytes_cursor, &mut write_dir).unwrap();
-            }
-            ZipExtraction::Enabled => {
-                let mut archive = zip::ZipArchive::new(respbytes_cursor).unwrap();
-
-                for i in 0..archive.len() {
-                    let mut file = archive.by_index(i).unwrap();
-
-                    let outpath_str = file.enclosed_name().unwrap().to_str().unwrap();
-                    let outpath: PathBuf = PathBuf::from_slash(outpath_str);
-
-                    // println!(
-                    //     "data_dir: {:?} , package_id:{:?} , artifact_id: {:?}, outpath: {:?}",
-                    //     &data_dir, &package_id, &artifact.id, &outpath
-                    // );
-                    let write_dir = data_dir.join(&package_id).join(&artifact.id).join(outpath);
-                    // println!("write_dir: {:?} ", &write_dir);
-
-                    let parent_dir = write_dir.parent().unwrap();
-                    fs::create_dir_all(parent_dir).unwrap();
-                    let mut write_dir = fs::File::create(&write_dir).unwrap();
-
-                    match config.packages.prop_comment_removal {
-                        PropCommentRemoval::Disabled => {
-                            std::io::copy(&mut file, &mut write_dir).unwrap();
-                        }
-                        PropCommentRemoval::Enabled => {
-                            if outpath_str.ends_with("parameters.prop") {
-                                let mut prop_content = String::new();
-                                file.read_to_string(&mut prop_content)?;
-
-                                let prop_lines: Vec<&str> = prop_content
-                                    .lines()
-                                    .filter(|l| !l.starts_with("#"))
-                                    .collect();
-
-                                for line in prop_lines {
-                                    write_dir
-                                        .write_all(line.as_bytes())
-                                        .expect("Couldn't write to file");
-
-                                    write_dir.write_all(b"\n").expect("Couldn't write to file");
-                                }
-                            // write_dir.write_all(lines.as_bytes());
-                            } else {
-                                std::io::copy(&mut file, &mut write_dir).unwrap();
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        write_artifact(package_id, &artifact.id, config, data_dir, respbytes_cursor).await?;
     }
+    Ok(())
+}
+
+async fn process_package(
+    package_id: &str,
+    config: &Config,
+    client: &reqwest::Client,
+    authorization: &str,
+    data_dir: &std::path::PathBuf,
+) -> Result<(), Box<dyn std::error::Error>> {
+    //remove local package contents before download
+    let package_dir = data_dir.join(&package_id);
+    let _ = fs::remove_dir_all(package_dir);
+
+    println!("Processing Package: {:?}", package_id);
+
+    process_package_artifacts(
+        package_id,
+        "IntegrationDesigntimeArtifacts",
+        config,
+        client,
+        authorization,
+        data_dir,
+    )
+    .await?;
+
+    process_package_artifacts(
+        package_id,
+        "ValueMappingDesigntimeArtifacts",
+        config,
+        client,
+        authorization,
+        data_dir,
+    )
+    .await?;
+
     Ok(())
 }
 
@@ -479,5 +528,5 @@ pub async fn run_with_config(
 fn basic_auth(user: &str, pass: &str) -> String {
     let encoded = base64::encode(format!("{username}:{pass}", username = &user, pass = &pass));
     let authorization = format!("Basic {encoded}", encoded = encoded);
-    return authorization;
+    authorization
 }

@@ -4,12 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Ideas - not implemented]
 
-- Value Mapping
 - `download_worker_count`
 - Benchmarks
 
 ## [Unreleased]
 
+- Value Mapping Download
 - Gzip Support not implemented (since most of the data comes as zip)
 
 ## [0.2.1] - 2021-03-12

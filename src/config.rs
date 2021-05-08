@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{self, Value};
 
 fn default_package_rule_operation() -> OperationEnum {
     OperationEnum::Include
