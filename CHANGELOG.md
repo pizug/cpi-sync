@@ -4,11 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Ideas - not implemented]
 
-- `download_worker_count`
-- Benchmarks
-
 ## [Unreleased]
 
+## [0.3.0] - 2021-05-08
+
+- `download_worker_count`
+- Print elapsed time
 - Value Mapping Download
 - Gzip Support not implemented (since most of the data comes as zip)
 

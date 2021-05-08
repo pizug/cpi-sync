@@ -15,7 +15,11 @@ fn default_packages_local_dir() -> String {
     "".to_string()
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+fn default_download_worker_count() -> usize {
+    5
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum OperationEnum {
     #[serde(rename = "include")]
     Include,
@@ -23,20 +27,20 @@ pub enum OperationEnum {
     Exclude,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PackageSingle {
     pub id: String,
     #[serde(default = "default_package_rule_operation")]
     pub operation: OperationEnum,
 }
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PackageRegex {
     #[serde(default = "default_package_rule_operation")]
     pub operation: OperationEnum,
     pub pattern: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum PackageRuleEnum {
     #[serde(rename = "regex")]
@@ -45,7 +49,7 @@ pub enum PackageRuleEnum {
     Single(PackageSingle),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ZipExtraction {
     #[serde(rename = "disabled")]
     Disabled,
@@ -53,7 +57,7 @@ pub enum ZipExtraction {
     Enabled,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum PropCommentRemoval {
     #[serde(rename = "disabled")]
     Disabled,
@@ -61,31 +65,33 @@ pub enum PropCommentRemoval {
     Enabled,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Packages {
     #[serde(default = "default_extract_zip")]
     pub zip_extraction: ZipExtraction,
     #[serde(default = "default_prop_comment_removal")]
     pub prop_comment_removal: PropCommentRemoval,
+    #[serde(default = "default_download_worker_count")]
+    pub download_worker_count: usize,
     #[serde(default = "default_packages_local_dir")]
     pub local_dir: String,
     pub filter_rules: Vec<PackageRuleEnum>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CredentialSUser {
     pub username: String,
     pub password_environment_variable: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CredentialOauthClientCredentials {
     pub client_id: String,
     pub token_endpoint_url: String,
     pub client_secret_environment_variable: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum CredentialInside {
     #[serde(rename = "oauth_client_credentials")]
     OauthClientCredentials(CredentialOauthClientCredentials),
@@ -93,14 +99,14 @@ pub enum CredentialInside {
     SUser(CredentialSUser),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Tenant {
     pub management_host: String,
     pub credential: CredentialInside,
     // credential: CredentialInside,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     pub cpisync: String,
     pub tenant: Tenant,

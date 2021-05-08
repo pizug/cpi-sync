@@ -120,6 +120,7 @@ OPTIONS:
 | local_dir                   | ""       | Directory to download artifacts, relative to the config file. By default it is the same as config file directory.                                                                                    |
 | prop_comment_removal        | disabled | Removes auto-generated timestamp comments in `parameters.prop`. Useful for keeping Git history clean. Only works when zip_extraction is enabled. It is disabled by default since it changes content. |
 | filter_rules                | -        | Filter rules to select packages for sync. It can contain simple package id or regex rules.                                                                                                           |
+| download_worker_count       | 5        | Concurrent handling of download per package content and per artifact download. It defaults to 5 workers.                                                                                             |
 
 Config file version can be older than tool version(Currently `0.2.0`), this is to prevent unnecessary changes if there are no breaking changes to the config structure.
 

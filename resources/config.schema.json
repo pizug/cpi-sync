@@ -156,7 +156,10 @@
         "prop_comment_removal": {
           "$ref": "#/definitions/enum_enabled_disabled"
         },
-
+        "download_worker_count": {
+          "type": "integer",
+          "minimum": 1
+        },
         "filter_rules": { "$ref": "#/definitions/package_filter_rules" }
       },
 

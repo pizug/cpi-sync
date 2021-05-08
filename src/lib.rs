@@ -1,5 +1,9 @@
 mod config;
 use config::*;
+use futures::{
+    stream::{FuturesUnordered, StreamExt},
+    Future,
+};
 use path_slash::PathBufExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -13,6 +17,9 @@ use std::{
 use std::{fs, io::Cursor, ops::Deref};
 
 pub use config::Config;
+
+// use rand::seq::SliceRandom;
+// use rand::thread_rng;
 
 // response types
 #[derive(Serialize, Deserialize, Debug)]
@@ -114,6 +121,64 @@ async fn write_artifact(
     Ok(())
 }
 
+async fn download_artifact(
+    package_id: String,
+    artifact_id: String,
+    config: Config,
+    data_dir: std::path::PathBuf,
+    client: reqwest::Client,
+    authorization: String,
+    artifact_type: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!(
+        "- Artifact: {:#?} , from Package: {:#?}",
+        artifact_id, package_id
+    );
+
+    let api_artifact_payload_url = format!(
+        "https://{host}/api/v1/{artifact_type}(Id='{artifact_id}',Version='Active')/$value",
+        host = config.tenant.management_host,
+        artifact_id = artifact_id,
+        artifact_type = artifact_type
+    );
+    let resp = client
+        .get(&api_artifact_payload_url)
+        .header("Authorization", authorization)
+        .send()
+        .await?;
+
+    let resp_success = &resp.status().is_success();
+    let resp_code = resp.status();
+
+    if !resp_success {
+        println!("Artifact Download Failed!");
+        println!("API URL: {}", &api_artifact_payload_url);
+        println!("API Response Code: {:#?}", &resp_code);
+        println!("Response Body:");
+        let body_text = resp.text().await?;
+        println!("{}", &body_text);
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "API Artifact Download Failed!",
+        )
+        .into());
+    }
+
+    let respbytes = resp.bytes().await?;
+    let respbytes_cursor = Cursor::new(respbytes.deref());
+
+    write_artifact(
+        &package_id,
+        &artifact_id,
+        &config,
+        &data_dir,
+        respbytes_cursor,
+    )
+    .await?;
+
+    Ok(())
+}
+
 async fn process_package_artifacts(
     package_id: &str,
     artifact_type: &str,
@@ -121,7 +186,10 @@ async fn process_package_artifacts(
     client: &reqwest::Client,
     authorization: &str,
     data_dir: &std::path::PathBuf,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<
+    Vec<impl Future<Output = Result<(), Box<dyn std::error::Error>>>>,
+    Box<dyn std::error::Error>,
+> {
     let api_package_artifact_list_url = format!(
         "https://{host}/api/v1/IntegrationPackages('{package_id}')/{artifact_type}",
         host = config.tenant.management_host,
@@ -167,44 +235,19 @@ async fn process_package_artifacts(
         }
     };
 
+    let mut tasks = Vec::new();
     for artifact in resp_obj.d.results {
-        println!("- Artifact: {:#?}", artifact.id);
-
-        let api_artifact_payload_url = format!(
-            "https://{host}/api/v1/{artifact_type}(Id='{artifact_id}',Version='Active')/$value",
-            host = config.tenant.management_host,
-            artifact_id = artifact.id,
-            artifact_type = artifact_type
-        );
-        let resp = client
-            .get(&api_artifact_payload_url)
-            .header("Authorization", authorization)
-            .send()
-            .await?;
-
-        let resp_success = &resp.status().is_success();
-        let resp_code = resp.status();
-
-        if !resp_success {
-            println!("Artifact Download Failed!");
-            println!("API URL: {}", &api_artifact_payload_url);
-            println!("API Response Code: {:#?}", &resp_code);
-            println!("Response Body:");
-            let body_text = resp.text().await?;
-            println!("{}", &body_text);
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "API Artifact Download Failed!",
-            )
-            .into());
-        }
-
-        let respbytes = resp.bytes().await?;
-        let respbytes_cursor = Cursor::new(respbytes.deref());
-
-        write_artifact(package_id, &artifact.id, config, data_dir, respbytes_cursor).await?;
+        tasks.push(download_artifact(
+            package_id.to_owned(),
+            artifact.id.to_owned(),
+            config.clone(),
+            data_dir.clone(),
+            client.clone(),
+            authorization.to_string(),
+            artifact_type.to_string(),
+        ));
     }
-    Ok(())
+    Ok(tasks)
 }
 
 async fn process_package(
@@ -213,14 +256,17 @@ async fn process_package(
     client: &reqwest::Client,
     authorization: &str,
     data_dir: &std::path::PathBuf,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<
+    Vec<impl Future<Output = Result<(), Box<dyn std::error::Error>>>>,
+    Box<dyn std::error::Error>,
+> {
     //remove local package contents before download
     let package_dir = data_dir.join(&package_id);
     let _ = fs::remove_dir_all(package_dir);
 
     println!("Processing Package: {:?}", package_id);
 
-    process_package_artifacts(
+    let mut tasks1 = process_package_artifacts(
         package_id,
         "IntegrationDesigntimeArtifacts",
         config,
@@ -230,7 +276,7 @@ async fn process_package(
     )
     .await?;
 
-    process_package_artifacts(
+    let mut tasks2 = process_package_artifacts(
         package_id,
         "ValueMappingDesigntimeArtifacts",
         config,
@@ -240,7 +286,8 @@ async fn process_package(
     )
     .await?;
 
-    Ok(())
+    tasks1.append(&mut tasks2);
+    Ok(tasks1)
 }
 
 async fn get_all_packages(
@@ -298,6 +345,8 @@ pub async fn run_with_config(
 ) -> Result<(), Box<dyn std::error::Error>> {
     //println!("config: {:?}", config);
     //println!("Using input file: {:?}", opts);
+
+    let now = tokio::time::Instant::now();
 
     let client = reqwest::Client::new();
 
@@ -517,10 +566,54 @@ pub async fn run_with_config(
     println!("Downloading These Packages:");
     println!("{:?}", &package_list);
 
+    let mut futs = FuturesUnordered::new();
+    let mut outputs = Vec::new();
+
     //fetch package artifacts
     for package_id in package_list.iter() {
-        process_package(package_id, &config, &client, &authorization, &data_dir).await?;
+        futs.push(process_package(
+            package_id,
+            &config,
+            &client,
+            &authorization,
+            &data_dir,
+        ));
+
+        if futs.len() >= config.packages.download_worker_count {
+            //fail fast
+            outputs.push(futs.next().await.unwrap()?);
+        }
     }
+    // wait for remaining
+    while let Some(item) = futs.next().await {
+        outputs.push(item?);
+    }
+
+    let mut futs2 = FuturesUnordered::new();
+    let mut artifact_results = Vec::new();
+
+    // let mut outputs2 = outputs.into_iter().flatten().collect::<Vec<_>>();
+    // outputs2.shuffle(&mut thread_rng());
+    // for task in outputs2.into_iter() {
+    for task in outputs.into_iter().flatten() {
+        // task.await;
+        futs2.push(task);
+
+        if futs2.len() >= config.packages.download_worker_count {
+            //fail fast
+            artifact_results.push(futs2.next().await.unwrap()?);
+        }
+    }
+
+    // wait for remaining
+    while let Some(item) = futs2.next().await {
+        artifact_results.push(item?);
+    }
+
+    println!(
+        "Download time elapsed in seconds: {}",
+        now.elapsed().as_secs()
+    );
 
     Ok(())
 }
