@@ -8,10 +8,12 @@ All notable changes to this project will be documented in this file.
 
 ## [0.3.0] - 2021-05-08
 
-- `download_worker_count`
-- Print elapsed time
-- Value Mapping Download
-- Gzip Support not implemented (since most of the data comes as zip)
+- Add: `download_worker_count` config option, and concurrent downloads feature for faster operation
+- Add: Print elapsed time
+- Add: Value Mapping Download
+- Fix: Relative path normalization
+- Add: Using absolute paths for `local_dir` config option.
+- Consider: Gzip Support not implemented (since most of the data comes as zip)
 
 ## [0.2.1] - 2021-03-12
 

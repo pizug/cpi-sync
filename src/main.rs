@@ -8,7 +8,7 @@ use std::{fs::File, io::Read};
 
 //cli type
 #[derive(Clap, Debug)]
-#[clap(version = "0.3.0-beta", author = "Fatih.Pense @ pizug.com")]
+#[clap(version = "0.3.0", author = "Fatih.Pense @ pizug.com")]
 struct Opts {
     #[clap(short, long, default_value = "./cpi-sync.json")]
     config: String,

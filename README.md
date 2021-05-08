@@ -35,6 +35,7 @@ It has two main configurations that are documented below:
     }
   },
   "packages": {
+    "local_dir": "relative/path/to/config",
     "filter_rules": [
       { "type": "single", "id": "TrainingPackage" },
       { "type": "single", "id": "eDocumentElectronicInvoicingforYou" },
@@ -114,13 +115,13 @@ OPTIONS:
 
 ### JSON Config File Reference
 
-| Options for Packages Object | Default  | Description                                                                                                                                                                                          |
-| --------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| zip_extraction              | enabled  | Extract artifact contents, this is useful for Git usage. If you prefer to keep artifacts as .zip files for backup, disable this option.                                                              |
-| local_dir                   | ""       | Directory to download artifacts, relative to the config file. By default it is the same as config file directory.                                                                                    |
-| prop_comment_removal        | disabled | Removes auto-generated timestamp comments in `parameters.prop`. Useful for keeping Git history clean. Only works when zip_extraction is enabled. It is disabled by default since it changes content. |
-| filter_rules                | -        | Filter rules to select packages for sync. It can contain simple package id or regex rules.                                                                                                           |
-| download_worker_count       | 5        | Concurrent handling of download per package content and per artifact download. It defaults to 5 workers.                                                                                             |
+| Options for Packages Object | Default  | Description                                                                                                                                                                                                         |
+| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| zip_extraction              | enabled  | Extract artifact contents, this is useful for Git usage. If you prefer to keep artifacts as .zip files for backup, disable this option.                                                                             |
+| local_dir                   | "./"     | Directory to download artifacts, it can be relative to the config file or absolute path. By default it is the same directory that contains config file. Regular rules apply for Linux/Windows paths and JSON escape |
+| prop_comment_removal        | disabled | Removes auto-generated timestamp comments in `parameters.prop`. Useful for keeping Git history clean. Only works when zip_extraction is enabled. It is disabled by default since it changes content.                |
+| filter_rules                | -        | Filter rules to select packages for sync. It can contain simple package id or regex rules. Defaults to no package download.                                                                                         |
+| download_worker_count       | 5        | Concurrent handling of download per package content and per artifact download. It defaults to 5 workers.                                                                                                            |
 
 Config file version can be older than tool version(Currently `0.2.0`), this is to prevent unnecessary changes if there are no breaking changes to the config structure.
 

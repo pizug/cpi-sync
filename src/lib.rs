@@ -12,7 +12,7 @@ use std::{
     env,
     io::{Read, Write},
     iter::FromIterator,
-    path::PathBuf,
+    path::{Component, Path, PathBuf},
 };
 use std::{fs, io::Cursor, ops::Deref};
 
@@ -262,7 +262,8 @@ async fn process_package(
 > {
     //remove local package contents before download
     let package_dir = data_dir.join(&package_id);
-    let _ = fs::remove_dir_all(package_dir);
+    remove_dir_all::ensure_empty_dir(&package_dir)?;
+    // let _ = fs::remove_dir_all(package_dir);
 
     println!("Processing Package: {:?}", package_id);
 
@@ -474,14 +475,20 @@ pub async fn run_with_config(
         println!("API First Check Successful.");
     }
 
-    let mut data_dir = std::path::PathBuf::from(&config_path);
-    data_dir = data_dir
-        .parent()
-        .unwrap()
-        .canonicalize()
-        .unwrap()
-        .join(&config.packages.local_dir)
-        .to_path_buf();
+    //https://doc.rust-lang.org/std/fs/fn.canonicalize.html
+
+    let normalized_localdir = normalize_path(Path::new(&config.packages.local_dir));
+    let mut data_dir = std::path::PathBuf::from(".");
+    //config path as starting point:
+    data_dir.push(normalize_path(Path::new(&config_path)));
+    data_dir = data_dir.parent().unwrap().to_path_buf();
+
+    //localdir can be relative or absolute
+    data_dir.push(normalized_localdir);
+
+    tokio::fs::create_dir_all(&data_dir).await?;
+    //UNC paths for long windows paths over 260 chars
+    data_dir = data_dir.canonicalize().unwrap();
 
     let api_package_list = get_all_packages(&config, &client, &authorization).await?;
 
@@ -622,4 +629,31 @@ fn basic_auth(user: &str, pass: &str) -> String {
     let encoded = base64::encode(format!("{username}:{pass}", username = &user, pass = &pass));
     let authorization = format!("Basic {encoded}", encoded = encoded);
     authorization
+}
+
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut components = path.components().peekable();
+    let mut ret = if let Some(c @ Component::Prefix(..)) = components.peek().cloned() {
+        components.next();
+        PathBuf::from(c.as_os_str())
+    } else {
+        PathBuf::new()
+    };
+
+    for component in components {
+        match component {
+            Component::Prefix(..) => unreachable!(),
+            Component::RootDir => {
+                ret.push(component.as_os_str());
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                ret.pop();
+            }
+            Component::Normal(c) => {
+                ret.push(c);
+            }
+        }
+    }
+    ret
 }
