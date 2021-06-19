@@ -60,7 +60,9 @@ There are two ideas here:
 - You can pass credential secrets via environment variables
 - Use command argument `--no-input`
 
-## Recommended Credentials: OAuth
+## Recommended Credentials
+
+OAuth is recommended for NEO. If you are on CF, Basic Auth with Service Keys is also fine.
 
 Create an OAuth client for your tenant. Use `oauth_client_credentials` object under `credential` for the configuration.
 
