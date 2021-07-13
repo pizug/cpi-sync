@@ -60,9 +60,9 @@ There are two ideas here:
 - You can pass credential secrets via environment variables
 - Use command argument `--no-input`
 
-## Recommended Credentials
+## Recommended Credentials: OAuth
 
-OAuth is recommended for NEO. If you are on CF, Basic Auth with Service Keys is also fine.
+OAuth is recommended. If you are on Cloud Foundry, you can create Service Keys as explained in [this blog post](https://blogs.sap.com/2021/07/13/using-cloud-integration-apis-with-tools-on-cloud-foundry-creating-a-service-key/).
 
 Create an OAuth client for your tenant. Use `oauth_client_credentials` object under `credential` for the configuration.
 
