@@ -129,6 +129,7 @@ async fn download_artifact(
     client: reqwest::Client,
     authorization: String,
     artifact_type: String,
+    ignore_error_download: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "- Artifact: {:#?} , from Package: {:#?}",
@@ -150,10 +151,15 @@ async fn download_artifact(
     let resp_success = &resp.status().is_success();
     let resp_code = resp.status();
 
-    if !resp_success {
+    if !resp_success{
         println!("Artifact Download Failed!");
         println!("API URL: {}", &api_artifact_payload_url);
         println!("API Response Code: {:#?}", &resp_code);
+    }
+    if !resp_success && ignore_error_download{
+        println!("Ignoring error (Ignore Download Error Option: True)");
+    }
+    if !resp_success && !ignore_error_download{
         println!("Response Body:");
         let body_text = resp.text().await?;
         println!("{}", &body_text);
@@ -164,18 +170,19 @@ async fn download_artifact(
         .into());
     }
 
-    let respbytes = resp.bytes().await?;
-    let respbytes_cursor = Cursor::new(respbytes.deref());
+    if *resp_success{
+        let respbytes = resp.bytes().await?;
+        let respbytes_cursor = Cursor::new(respbytes.deref());
 
-    write_artifact(
-        &package_id,
-        &artifact_id,
-        &config,
-        &data_dir,
-        respbytes_cursor,
-    )
-    .await?;
-
+        write_artifact(
+            &package_id,
+            &artifact_id,
+            &config,
+            &data_dir,
+            respbytes_cursor,
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -186,6 +193,7 @@ async fn process_package_artifacts(
     client: &reqwest::Client,
     authorization: &str,
     data_dir: &std::path::PathBuf,
+    ignore_error_download: &bool,
 ) -> Result<
     Vec<impl Future<Output = Result<(), Box<dyn std::error::Error>>>>,
     Box<dyn std::error::Error>,
@@ -245,6 +253,7 @@ async fn process_package_artifacts(
             client.clone(),
             authorization.to_string(),
             artifact_type.to_string(),
+            *ignore_error_download,
         ));
     }
     Ok(tasks)
@@ -256,6 +265,7 @@ async fn process_package(
     client: &reqwest::Client,
     authorization: &str,
     data_dir: &std::path::PathBuf,
+    ignore_error_download: &bool,
 ) -> Result<
     Vec<impl Future<Output = Result<(), Box<dyn std::error::Error>>>>,
     Box<dyn std::error::Error>,
@@ -274,6 +284,7 @@ async fn process_package(
         client,
         authorization,
         data_dir,
+        ignore_error_download,
     )
     .await?;
 
@@ -284,6 +295,7 @@ async fn process_package(
         client,
         authorization,
         data_dir,
+        ignore_error_download,
     )
     .await?;
 
@@ -343,6 +355,7 @@ pub async fn run_with_config(
     config: &Config,
     config_path: &String,
     no_input: bool,
+    ignore_error_download: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     //println!("config: {:?}", config);
     //println!("Using input file: {:?}", opts);
@@ -584,6 +597,7 @@ pub async fn run_with_config(
             &client,
             &authorization,
             &data_dir,
+            &ignore_error_download,
         ));
 
         if futs.len() >= config.packages.download_worker_count {

@@ -8,12 +8,14 @@ use std::{fs::File, io::Read};
 
 //cli type
 #[derive(Clap, Debug)]
-#[clap(version = "0.3.0", author = "Fatih.Pense @ pizug.com")]
+#[clap(version = "0.3.1", author = "Fatih.Pense @ pizug.com")]
 struct Opts {
     #[clap(short, long, default_value = "./cpi-sync.json")]
     config: String,
     #[clap(long, about = "Disable features that require user input")]
     no_input: bool,
+    #[clap(short,long, about = "Ignore error: Download")]
+    ignore_error_download: bool,
 }
 
 fn pause() {
@@ -64,7 +66,7 @@ async fn run_console(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
 
     let config: cpi_sync::Config = serde_json::from_str(&config_str)?;
 
-    return cpi_sync::run_with_config(&config, &opts.config, opts.no_input).await;
+    return cpi_sync::run_with_config(&config, &opts.config, opts.no_input, opts.ignore_error_download).await;
 }
 
 #[allow(clippy::needless_return)]

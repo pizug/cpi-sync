@@ -1,4 +1,13 @@
+#Build 
 /target
 Cargo.lock
+
+#Environment and Tests
 cpi-sync.json
 testdata
+
+#macOS 
+.DS_Store
+
+#VS Code
+.vscode/launch.json
