@@ -151,15 +151,15 @@ async fn download_artifact(
     let resp_success = &resp.status().is_success();
     let resp_code = resp.status();
 
-    if !resp_success{
+    if !resp_success {
         println!("Artifact Download Failed!");
         println!("API URL: {}", &api_artifact_payload_url);
         println!("API Response Code: {:#?}", &resp_code);
     }
-    if !resp_success && ignore_error_download{
+    if !resp_success && ignore_error_download {
         println!("Ignoring error (Ignore Download Error Option: True)");
     }
-    if !resp_success && !ignore_error_download{
+    if !resp_success && !ignore_error_download {
         println!("Response Body:");
         let body_text = resp.text().await?;
         println!("{}", &body_text);
@@ -170,7 +170,7 @@ async fn download_artifact(
         .into());
     }
 
-    if *resp_success{
+    if *resp_success {
         let respbytes = resp.bytes().await?;
         let respbytes_cursor = Cursor::new(respbytes.deref());
 
@@ -360,10 +360,6 @@ pub async fn run_with_config(
     //println!("config: {:?}", config);
     //println!("Using input file: {:?}", opts);
 
-    let now = tokio::time::Instant::now();
-
-    let client = reqwest::Client::new();
-
     // let mut authorization: Option<String> = None;
 
     let mut password: Option<String> = None;
@@ -443,6 +439,41 @@ pub async fn run_with_config(
             .into())
         }
     };
+
+    run_with_config_and_password(
+        config,
+        config_path,
+        no_input,
+        ignore_error_download,
+        &password,
+    )
+    .await?;
+
+    Ok(())
+}
+
+pub async fn run_with_config_and_password(
+    config: &Config,
+    config_path: &String,
+    no_input: bool,
+    ignore_error_download: bool,
+
+    password: &String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    //println!("config: {:?}", config);
+    //println!("Using input file: {:?}", opts);
+
+    let now = tokio::time::Instant::now();
+
+    let client = reqwest::Client::new();
+
+    // let mut authorization: Option<String> = None;
+
+    let username: String = match &config.tenant.credential {
+        CredentialInside::OauthClientCredentials(c) => c.client_id.to_string(),
+        CredentialInside::SUser(c) => c.username.to_string(),
+    };
+    //try to get password from command line
 
     let check_api_url = format!(
         "https://{host}/api/v1/",

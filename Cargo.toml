@@ -1,6 +1,6 @@
 [package]
 name = "cpi-sync"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Fatih Pense"]
 edition = "2018"
 

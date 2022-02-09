@@ -14,7 +14,7 @@ struct Opts {
     config: String,
     #[clap(long, about = "Disable features that require user input")]
     no_input: bool,
-    #[clap(short,long, about = "Ignore error: Download")]
+    #[clap(short, long, about = "Ignore error: Download")]
     ignore_error_download: bool,
 }
 
@@ -66,7 +66,13 @@ async fn run_console(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
 
     let config: cpi_sync::Config = serde_json::from_str(&config_str)?;
 
-    return cpi_sync::run_with_config(&config, &opts.config, opts.no_input, opts.ignore_error_download).await;
+    return cpi_sync::run_with_config(
+        &config,
+        &opts.config,
+        opts.no_input,
+        opts.ignore_error_download,
+    )
+    .await;
 }
 
 #[allow(clippy::needless_return)]
