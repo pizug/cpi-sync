@@ -5,6 +5,7 @@ Cargo.lock
 #Environment and Tests
 cpi-sync.json
 testdata
+docs
 
 #macOS 
 .DS_Store

@@ -1,4 +1,5 @@
-use clap::Clap;
+use clap::Parser;
+
 use crossterm::event::{read, Event};
 use jsonschema::{self, Draft, JSONSchema};
 use serde_json::{self, Value};
@@ -7,14 +8,14 @@ use std::{fs::File, io::Read};
 //config types
 
 //cli type
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 #[clap(version = "0.3.1", author = "Fatih.Pense @ pizug.com")]
 struct Opts {
     #[clap(short, long, default_value = "./cpi-sync.json")]
     config: String,
-    #[clap(long, about = "Disable features that require user input")]
+    #[clap(long, help = "Disable features that require user input")]
     no_input: bool,
-    #[clap(short, long, about = "Ignore error: Download")]
+    #[clap(short, long, help = "Ignore error: Download")]
     ignore_error_download: bool,
 }
 
@@ -43,7 +44,8 @@ async fn run_console(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
 
     let compiled_schema = JSONSchema::options()
         .with_draft(Draft::Draft7)
-        .compile(&json_schema)?;
+        .compile(&json_schema)
+        .unwrap();
 
     let mut config_str = String::new();
     File::open(&opts.config)?.read_to_string(&mut config_str)?;
