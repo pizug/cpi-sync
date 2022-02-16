@@ -1,4 +1,5 @@
 use clap::Parser;
+use cpi_sync::errors::Error;
 
 use crossterm::event::{read, Event};
 use jsonschema::{self, Draft, JSONSchema};
@@ -19,11 +20,11 @@ struct Opts {
     ignore_error_download: bool,
 }
 
-fn pause() {
+fn pause() -> Result<(), Error> {
     println!("Press any key to continue...");
     loop {
         // `read()` blocks until an `Event` is available
-        match read().unwrap() {
+        match read()? {
             Event::Key(_) => {
                 // println!("{:?}", event);
                 break;
@@ -31,21 +32,21 @@ fn pause() {
             _ => {}
         }
     }
+    Ok(())
 }
 
-async fn run_console(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_console(opts: &Opts) -> Result<(), Error> {
     println!("Start CPI Sync?");
     if !opts.no_input {
-        pause();
+        pause()?;
     }
 
     let schema_str = include_str!("../resources/config.schema.json");
-    let json_schema: Value = serde_json::from_str(schema_str).unwrap();
+    let json_schema: Value = serde_json::from_str(schema_str)?;
 
     let compiled_schema = JSONSchema::options()
         .with_draft(Draft::Draft7)
-        .compile(&json_schema)
-        .unwrap();
+        .compile(&json_schema)?;
 
     let mut config_str = String::new();
     File::open(&opts.config)?.read_to_string(&mut config_str)?;
@@ -79,7 +80,7 @@ async fn run_console(opts: &Opts) -> Result<(), Box<dyn std::error::Error>> {
 
 #[allow(clippy::needless_return)]
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Error> {
     let opts: Opts = Opts::parse();
     let result = run_console(&opts).await;
 
@@ -87,14 +88,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(()) => {
             println!("Completed successfully.");
             if !opts.no_input {
-                pause();
+                pause()?;
             }
             return Ok(());
         }
         Err(err) => {
             println!("{:?}", err);
             if !opts.no_input {
-                pause();
+                pause()?;
             }
             return Err(err);
         }

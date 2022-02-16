@@ -1,4 +1,8 @@
 mod config;
+pub mod errors;
+
+use crate::errors::Error;
+
 use config::*;
 use futures::{
     stream::{FuturesUnordered, StreamExt},
@@ -54,26 +58,32 @@ async fn write_artifact(
     config: &Config,
     data_dir: &std::path::PathBuf,
     mut respbytes_cursor: Cursor<&[u8]>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Error> {
     match config.packages.zip_extraction {
         ZipExtraction::Disabled => {
             let write_dir = data_dir
                 .join(&package_id)
                 .join(artifact_id.to_string() + ".zip");
 
-            let parent_dir = write_dir.parent().unwrap();
-            fs::create_dir_all(parent_dir).unwrap();
+            let parent_dir = write_dir
+                .parent()
+                .ok_or(Error::Filesystem("No parent found".to_string()))?;
+            fs::create_dir_all(parent_dir)?;
 
-            let mut write_dir = fs::File::create(&write_dir).unwrap();
-            std::io::copy(&mut respbytes_cursor, &mut write_dir).unwrap();
+            let mut write_dir = fs::File::create(&write_dir)?;
+            std::io::copy(&mut respbytes_cursor, &mut write_dir)?;
         }
         ZipExtraction::Enabled => {
-            let mut archive = zip::ZipArchive::new(respbytes_cursor).unwrap();
+            let mut archive = zip::ZipArchive::new(respbytes_cursor)?;
 
             for i in 0..archive.len() {
-                let mut file = archive.by_index(i).unwrap();
+                let mut file = archive.by_index(i)?;
 
-                let outpath_str = file.enclosed_name().unwrap().to_str().unwrap();
+                let outpath_str = file
+                    .enclosed_name()
+                    .ok_or(Error::Filesystem("enclosed_name".to_string()))?
+                    .to_str()
+                    .ok_or(Error::Filesystem("enclosed_name2".to_string()))?;
                 let outpath: PathBuf = PathBuf::from_slash(outpath_str);
 
                 // println!(
@@ -83,13 +93,15 @@ async fn write_artifact(
                 let write_dir = data_dir.join(&package_id).join(artifact_id).join(outpath);
                 // println!("write_dir: {:?} ", &write_dir);
 
-                let parent_dir = write_dir.parent().unwrap();
-                fs::create_dir_all(parent_dir).unwrap();
-                let mut write_dir = fs::File::create(&write_dir).unwrap();
+                let parent_dir = write_dir
+                    .parent()
+                    .ok_or(Error::Filesystem("No parent found".to_string()))?;
+                fs::create_dir_all(parent_dir)?;
+                let mut write_dir = fs::File::create(&write_dir)?;
 
                 match config.packages.prop_comment_removal {
                     PropCommentRemoval::Disabled => {
-                        std::io::copy(&mut file, &mut write_dir).unwrap();
+                        std::io::copy(&mut file, &mut write_dir)?;
                     }
                     PropCommentRemoval::Enabled => {
                         if outpath_str.ends_with("parameters.prop") {
@@ -102,15 +114,13 @@ async fn write_artifact(
                                 .collect();
 
                             for line in prop_lines {
-                                write_dir
-                                    .write_all(line.as_bytes())
-                                    .expect("Couldn't write to file");
+                                write_dir.write_all(line.as_bytes())?;
 
-                                write_dir.write_all(b"\n").expect("Couldn't write to file");
+                                write_dir.write_all(b"\n")?;
                             }
                         // write_dir.write_all(lines.as_bytes());
                         } else {
-                            std::io::copy(&mut file, &mut write_dir).unwrap();
+                            std::io::copy(&mut file, &mut write_dir)?;
                         }
                     }
                 }
@@ -130,7 +140,7 @@ async fn download_artifact(
     authorization: String,
     artifact_type: String,
     ignore_error_download: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Error> {
     println!(
         "- Artifact: {:#?} , from Package: {:#?}",
         artifact_id, package_id
@@ -194,10 +204,7 @@ async fn process_package_artifacts(
     authorization: &str,
     data_dir: &std::path::PathBuf,
     ignore_error_download: &bool,
-) -> Result<
-    Vec<impl Future<Output = Result<(), Box<dyn std::error::Error>>>>,
-    Box<dyn std::error::Error>,
-> {
+) -> Result<Vec<impl Future<Output = Result<(), Error>>>, Error> {
     let api_package_artifact_list_url = format!(
         "https://{host}/api/v1/IntegrationPackages('{package_id}')/{artifact_type}",
         host = config.tenant.management_host,
@@ -266,10 +273,7 @@ async fn process_package(
     authorization: &str,
     data_dir: &std::path::PathBuf,
     ignore_error_download: &bool,
-) -> Result<
-    Vec<impl Future<Output = Result<(), Box<dyn std::error::Error>>>>,
-    Box<dyn std::error::Error>,
-> {
+) -> Result<Vec<impl Future<Output = Result<(), Error>>>, Error> {
     //remove local package contents before download
     let package_dir = data_dir.join(&package_id);
     remove_dir_all::ensure_empty_dir(&package_dir)?;
@@ -307,7 +311,7 @@ async fn get_all_packages(
     config: &Config,
     client: &reqwest::Client,
     authorization: &str,
-) -> Result<APIResponseRoot, Box<dyn std::error::Error>> {
+) -> Result<APIResponseRoot, Error> {
     let api_package_list_url = format!(
         "https://{host}/api/v1/IntegrationPackages",
         host = config.tenant.management_host
@@ -356,7 +360,7 @@ pub async fn run_with_config(
     config_path: &String,
     no_input: bool,
     ignore_error_download: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Error> {
     //println!("config: {:?}", config);
     //println!("Using input file: {:?}", opts);
 
@@ -455,11 +459,11 @@ pub async fn run_with_config(
 pub async fn run_with_config_and_password(
     config: &Config,
     config_path: &String,
-    no_input: bool,
+    _no_input: bool,
     ignore_error_download: bool,
 
     password: &String,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Error> {
     //println!("config: {:?}", config);
     //println!("Using input file: {:?}", opts);
 
@@ -469,10 +473,10 @@ pub async fn run_with_config_and_password(
 
     // let mut authorization: Option<String> = None;
 
-    let username: String = match &config.tenant.credential {
-        CredentialInside::OauthClientCredentials(c) => c.client_id.to_string(),
-        CredentialInside::SUser(c) => c.username.to_string(),
-    };
+    // let username: String = match &config.tenant.credential {
+    //     CredentialInside::OauthClientCredentials(c) => c.client_id.to_string(),
+    //     CredentialInside::SUser(c) => c.username.to_string(),
+    // };
     //try to get password from command line
 
     let check_api_url = format!(
@@ -525,14 +529,17 @@ pub async fn run_with_config_and_password(
     let mut data_dir = std::path::PathBuf::from(".");
     //config path as starting point:
     data_dir.push(normalize_path(Path::new(&config_path)));
-    data_dir = data_dir.parent().unwrap().to_path_buf();
+    data_dir = data_dir
+        .parent()
+        .ok_or(Error::Filesystem("No parent found".to_string()))?
+        .to_path_buf();
 
     //localdir can be relative or absolute
     data_dir.push(normalized_localdir);
 
     tokio::fs::create_dir_all(&data_dir).await?;
     //UNC paths for long windows paths over 260 chars
-    data_dir = data_dir.canonicalize().unwrap();
+    data_dir = data_dir.canonicalize()?;
 
     let api_package_list = get_all_packages(&config, &client, &authorization).await?;
 
@@ -633,7 +640,11 @@ pub async fn run_with_config_and_password(
 
         if futs.len() >= config.packages.download_worker_count {
             //fail fast
-            outputs.push(futs.next().await.unwrap()?);
+            outputs.push(
+                futs.next()
+                    .await
+                    .ok_or(Error::Filesystem("Futures #1".to_string()))??,
+            );
         }
     }
     // wait for remaining
@@ -653,13 +664,18 @@ pub async fn run_with_config_and_password(
 
         if futs2.len() >= config.packages.download_worker_count {
             //fail fast
-            artifact_results.push(futs2.next().await.unwrap()?);
+            artifact_results.push(
+                futs2
+                    .next()
+                    .await
+                    .ok_or(Error::Filesystem("Futures #1".to_string()))?,
+            );
         }
     }
 
     // wait for remaining
     while let Some(item) = futs2.next().await {
-        artifact_results.push(item?);
+        artifact_results.push(item);
     }
 
     println!(
