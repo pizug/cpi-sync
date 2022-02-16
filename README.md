@@ -7,7 +7,7 @@ It has two main configurations that are documented below:
 - Command line arguments
 - Config file in JSON format
 
-## Quick Start Guide
+## Quick Start Guide (binary)
 
 1. Download it from GitHub releases.
 2. Create an empty directory, and put `cpisync.exe` inside the directory
@@ -18,6 +18,24 @@ It has two main configurations that are documented below:
       2. For Windows Powershell: `` $env:CPI_PASSWORD="your`$pass" `` (You can escape special characters with backtick "`" character)
       3. For Linux: `export CPI_PASSWORD=yourpass`
    2. Alternative: See "Recommended Credentials: OAuth"
+
+## Quick Start Guide (docker)
+
+If you have Docker installed. You can use the tool with it.
+
+1. Prepare the directory and the config file.
+2. `cd` to the directory
+3. Run the docker command below:
+
+```console
+docker run -it --rm -v ${PWD}:/data fatihpense/cpisync:0.3.4 --config ./data/cpi-sync.json
+```
+
+You can also pass environment variables and other input parameters like `--no-input`
+
+```console
+docker run -it --rm -e CPI_PASSWORD='yourpass' -v ${PWD}:/data fatihpense/cpisync:0.3.4 --config ./data/cpi-sync.json --no-input
+```
 
 ### Example Config
 
