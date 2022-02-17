@@ -37,6 +37,12 @@ You can also pass environment variables and other input parameters like `--no-in
 docker run -it --rm -e CPI_PASSWORD='yourpass' -v ${PWD}:/data fatihpense/cpisync:0.3.4 --config ./data/cpi-sync.json --no-input
 ```
 
+In order to just print the help you can run:
+
+```console
+docker run -it --rm fatihpense/cpisync:0.3.4 --help
+```
+
 ### Example Config
 
 ```json
@@ -125,9 +131,11 @@ USAGE:
     cpisync.exe [FLAGS] [OPTIONS]
 
 FLAGS:
-    -h, --help        Prints help information
-        --no-input    Disable features that require user input
-    -V, --version     Prints version information
+    -c, --config <CONFIG>          [default: ./cpi-sync.json]
+    -h, --help                     Print help information
+        --ignore-error-download    Ignore errors for downloading artifacts
+        --no-input                 Disable features that require user input
+    -V, --version                  Print version information
 
 OPTIONS:
     -c, --config <config>    [default: ./cpi-sync.json]

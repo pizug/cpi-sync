@@ -16,7 +16,7 @@ struct Opts {
     config: String,
     #[clap(long, help = "Disable features that require user input")]
     no_input: bool,
-    #[clap(short, long, help = "Ignore error: Download")]
+    #[clap(long, help = "Ignore errors for downloading artifacts")]
     ignore_error_download: bool,
 }
 
