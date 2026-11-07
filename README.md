@@ -128,17 +128,15 @@ There may be occasional breaking changes on the format, advice & feedback from t
 
 ```
 USAGE:
-    cpisync.exe [FLAGS] [OPTIONS]
+    cpi-sync [OPTIONS]
 
-FLAGS:
+OPTIONS:
     -c, --config <CONFIG>          [default: ./cpi-sync.json]
     -h, --help                     Print help information
         --ignore-error-download    Ignore errors for downloading artifacts
         --no-input                 Disable features that require user input
     -V, --version                  Print version information
 
-OPTIONS:
-    -c, --config <config>    [default: ./cpi-sync.json]
 ```
 
 ### JSON Config File Reference
